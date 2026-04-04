@@ -1,12 +1,13 @@
 import React from 'react'
 import { useStore } from '../../stores/useStore'
-import { Activity, BarChart3, AlertTriangle, Network, Settings } from 'lucide-react'
+import { Activity, BarChart3, AlertTriangle, Network, Settings, User } from 'lucide-react'
 
 const tabs = [
   { id: 'twin', label: 'Digital Twin', icon: Activity },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'crisis', label: 'Crisis Mgmt', icon: AlertTriangle },
-  { id: 'network', label: 'Network', icon: Network }
+  { id: 'network', label: 'Network', icon: Network },
+  { id: 'dashboard', label: 'User Dashboard', icon: User }
 ]
 
 function Header() {

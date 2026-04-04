@@ -7,6 +7,7 @@ import DetailPanel from './components/panel/DetailPanel'
 import AnalyticsDashboard from './components/dashboard/AnalyticsDashboard'
 import CrisisPanel from './components/crisis/CrisisPanel'
 import SupplyNetwork from './components/network/SupplyNetwork'
+import UserDashboard from './components/dashboard/UserDashboard'
 
 function App() {
   const { 
@@ -90,6 +91,12 @@ function App() {
         {activeTab === 'network' && (
           <div className="flex-1 relative">
             <SupplyNetwork />
+          </div>
+        )}
+        
+        {activeTab === 'dashboard' && (
+          <div className="flex-1 relative overflow-auto">
+            <UserDashboard />
           </div>
         )}
       </main>
