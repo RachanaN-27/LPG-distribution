@@ -1,87 +1,69 @@
-import { MapContainer, TileLayer, CircleMarker, Popup, Polyline } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, Circle } from 'react-leaflet'
 import { useStore } from '../../stores/useStore'
 import { getLPGStatus, getStatusColor, getTypeConfig } from '../../data/buildings'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import 'leaflet/dist/leaflet.css'
 
-const SupplyHubMarker = ({ position, isActive }) => {
-  const [pulse, setPulse] = useState(0)
-  
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPulse(p => (p + 1) % 4)
-    }, 800)
-    return () => clearInterval(interval)
-  }, [])
-  
-  const pulseRadius = isActive ? [30, 40, 35, 30][pulse] : [25, 30, 25, 20][pulse]
+const NEIGHBORHOODS = {
+  ITPL: { center: [12.9845, 77.7265], radius: 0.012 },
+  Brookfield: { center: [12.9745, 77.7235], radius: 0.014 },
+  WhitefieldMain: { center: [12.9785, 77.7315], radius: 0.016 },
+  Kadugodi: { center: [12.9930, 77.7060], radius: 0.012 },
+  Hoodi: { center: [12.9890, 77.7090], radius: 0.011 },
+  Sadarmatt: { center: [12.9770, 77.7140], radius: 0.010 },
+  Siddapura: { center: [12.9820, 77.7390], radius: 0.011 },
+  ITPB: { center: [12.9910, 77.7330], radius: 0.009 },
+  Bommasandra: { center: [12.9520, 77.6980], radius: 0.015 },
+  ElectronicCity: { center: [12.9200, 77.6700], radius: 0.018 },
+  Sarjapur: { center: [12.9080, 77.6900], radius: 0.014 },
+  Bellandur: { center: [12.9355, 77.6745], radius: 0.012 }
+}
+
+const SupplyHubMarker = ({ position, isActive, supplyPercent }) => {
+  const hubColor = supplyPercent < 20 ? '#ff3333' : supplyPercent < 50 ? '#ff9900' : '#00aa00'
   
   return (
-    <>
-      <CircleMarker
-        center={position}
-        radius={pulseRadius}
-        pathOptions={{
-          color: '#0066cc',
-          fillColor: isActive ? '#00aa00' : '#0066cc',
-          fillOpacity: isActive ? 0.3 + pulse * 0.05 : 0.15,
-          weight: 2
-        }}
-      />
-      <CircleMarker
-        center={position}
-        radius={12}
-        pathOptions={{
-          color: isActive ? '#00aa00' : '#0066cc',
-          fillColor: '#ffffff',
-          fillOpacity: 1,
-          weight: 4
-        }}
-      >
-        <Popup>
-          <div className="min-w-[180px] p-3 text-center">
-            <div className="font-bold text-base text-black">Central Supply Hub</div>
-            <div className="text-xs text-gray-600 mt-1">LPG Distribution Center</div>
-            {isActive && (
-              <div className="mt-2 text-green-600 font-bold text-sm animate-pulse">
-                DELIVERING...
-              </div>
-            )}
+    <CircleMarker
+      center={position}
+      radius={18}
+      pathOptions={{
+        color: hubColor,
+        fillColor: hubColor,
+        fillOpacity: 0.9,
+        weight: 4
+      }}
+    >
+      <Popup>
+        <div className="text-center p-2">
+          <div className="font-bold text-base text-black">Central Supply Hub</div>
+          <div className="text-sm text-gray-600 mt-1">
+            Stock: {Math.round(supplyPercent)}%
           </div>
-        </Popup>
-      </CircleMarker>
-    </>
+          {isActive && (
+            <div className="text-green-600 font-bold text-sm mt-2 animate-pulse">
+              DELIVERING...
+            </div>
+          )}
+        </div>
+      </Popup>
+    </CircleMarker>
   )
 }
 
-const AnimatedSupplyLine = ({ from, to, progress, isActive }) => {
-  if (!from || !to) return null
+const AnimatedDelivery = ({ delivery, progress }) => {
+  if (!delivery) return null
   
-  const lat1 = from[0], lng1 = from[1]
-  const lat2 = to[0], lng2 = to[1]
-  
-  if (!isActive) {
-    return (
-      <Polyline
-        positions={[[lat1, lng1], [lat2, lng2]]}
-        pathOptions={{
-          color: '#888888',
-          weight: 2,
-          opacity: 0.3,
-          dashArray: '8, 8'
-        }}
-      />
-    )
-  }
+  const { from, to } = delivery
+  const lat1 = from.lat, lng1 = from.lng
+  const lat2 = to.lat, lng2 = to.lng
   
   const currentLat = lat1 + (lat2 - lat1) * progress
   const currentLng = lng1 + (lng2 - lng1) * progress
   
-  const lineProgress = Math.min(1, progress)
   const linePositions = []
-  const steps = 20
-  for (let i = 0; i <= steps * lineProgress; i++) {
-    const t = i / steps
+  const steps = 30
+  for (let i = 0; i <= steps * progress; i++) {
+    const t = (i / steps)
     linePositions.push([
       lat1 + (lat2 - lat1) * t,
       lng1 + (lng2 - lng1) * t
@@ -93,11 +75,10 @@ const AnimatedSupplyLine = ({ from, to, progress, isActive }) => {
       <Polyline
         positions={linePositions}
         pathOptions={{
-          color: '#00aa00',
-          weight: 4,
-          opacity: 0.8,
-          lineCap: 'round',
-          lineJoin: 'round'
+          color: '#00ff00',
+          weight: 5,
+          opacity: 0.9,
+          lineCap: 'round'
         }}
       />
       <Polyline
@@ -105,97 +86,123 @@ const AnimatedSupplyLine = ({ from, to, progress, isActive }) => {
         pathOptions={{
           color: '#88ff88',
           weight: 2,
-          opacity: 0.6,
-          dashArray: '4, 8'
+          opacity: 0.7,
+          dashArray: '8, 12'
         }}
       />
-      {progress < 1 && progress > 0.1 && (
-        <CircleMarker
-          center={[currentLat, currentLng]}
-          radius={10}
-          pathOptions={{
-            color: '#ffffff',
-            fillColor: '#00ff00',
-            fillOpacity: 1,
-            weight: 3
-          }}
-        >
-          <Popup>
-            <div className="text-center text-black font-medium text-sm">
-              LPG Delivery in Progress
-            </div>
-          </Popup>
-        </CircleMarker>
-      )}
+      <CircleMarker
+        center={[currentLat, currentLng]}
+        radius={10}
+        pathOptions={{
+          color: '#ffffff',
+          fillColor: '#00ff00',
+          fillOpacity: 1,
+          weight: 3
+        }}
+      />
+      <Circle
+        center={[currentLat, currentLng]}
+        radius={30}
+        pathOptions={{
+          color: '#00ff00',
+          fillColor: '#00ff00',
+          fillOpacity: 0.2,
+          weight: 1
+        }}
+      />
     </>
   )
 }
 
-const BuildingMarker = ({ building, onSelect, selected, isBeingDelivered }) => {
-  const status = getLPGStatus(building.lpgLevel)
-  const statusColor = getStatusColor(status)
-  
-  const baseRadius = building.type === 'household' ? 10 : building.type === 'gas_station' ? 8 : 14
-  const radius = isBeingDelivered ? baseRadius * 1.6 : selected ? baseRadius * 1.3 : baseRadius
-  
-  const isPulsing = status === 'critical' || isBeingDelivered
+const CriticalBuildingMarker = ({ building, onSelect, isActive }) => {
+  const statusColor = getStatusColor(building.status)
+  const baseRadius = building.type === 'hospital' ? 16 : building.type === 'commercial' ? 10 : 8
   
   return (
     <CircleMarker
       center={[building.lat, building.lng]}
-      radius={radius}
+      radius={isActive ? baseRadius * 1.8 : baseRadius}
       pathOptions={{
-        color: isBeingDelivered ? '#00ff00' : statusColor,
-        fillColor: isBeingDelivered ? '#00ff00' : statusColor,
-        fillOpacity: isBeingDelivered ? 1 : 0.85,
-        weight: isBeingDelivered ? 4 : selected ? 3 : 2,
-        className: isPulsing ? 'animate-pulse' : ''
+        color: statusColor,
+        fillColor: statusColor,
+        fillOpacity: isActive ? 1 : 0.7,
+        weight: isActive ? 4 : 2
       }}
       eventHandlers={{
         click: () => onSelect(building)
       }}
     >
       <Popup>
-        <div className="min-w-[220px] p-3">
+        <div className="min-w-[200px] p-3">
           <div className="font-bold text-base mb-1" style={{ color: statusColor }}>
             {building.name}
-            {isBeingDelivered && <span className="ml-2 text-green-600 animate-pulse">✓</span>}
           </div>
-          <div className="text-xs text-gray-600 mb-2 font-medium">
-            {getTypeConfig(building.type).label}
+          <div className="text-xs text-gray-500 mb-2">
+            {getTypeConfig(building.type).label} • {building.area}
           </div>
-          <div className="space-y-2">
-            <div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">LPG Level:</span>
-                <span className="font-bold text-black">{building.lpgLevel?.toFixed(1) || 0}%</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2.5 mt-1 overflow-hidden">
-                <div 
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{ 
-                    width: `${building.lpgLevel || 0}%`,
-                    backgroundColor: statusColor
-                  }}
-                />
-              </div>
-            </div>
+          <div className="space-y-1">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Days Left:</span>
-              <span className="font-bold text-black">{(building.daysRemaining || 0).toFixed(1)}</span>
+              <span className="text-gray-600">LPG Level:</span>
+              <span className="font-bold text-black">{building.lpgLevel?.toFixed(1)}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className="h-2 rounded-full"
+                style={{ width: `${building.lpgLevel}%`, backgroundColor: statusColor }}
+              />
+            </div>
+            <div className="flex justify-between text-sm mt-2">
+              <span className="text-gray-600">Status:</span>
+              <span className="font-bold uppercase" style={{ color: statusColor }}>
+                {building.status}
+              </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Daily Use:</span>
-              <span className="font-medium text-black">{(building.dailyConsumption || 0).toFixed(1)} kg</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Status:</span>
-              <span className="font-bold" style={{ color: statusColor }}>{status.toUpperCase()}</span>
+              <span className="text-black">{building.dailyConsumption?.toFixed(1)} kg</span>
             </div>
           </div>
+          {isActive && (
+            <div className="mt-2 text-center text-green-600 font-bold text-sm animate-pulse">
+              ⬆ RECEIVING SUPPLY
+            </div>
+          )}
         </div>
       </Popup>
     </CircleMarker>
+  )
+}
+
+const DemandZone = ({ position, stats, radius }) => {
+  const { criticalUnits, warningUnits, healthyUnits } = stats
+  const total = criticalUnits + warningUnits + healthyUnits
+  
+  let zoneColor = '#00cc00'
+  let intensity = 0.15
+  
+  if (criticalUnits > 0) {
+    zoneColor = '#ff0000'
+    intensity = Math.min(0.4, 0.1 + (criticalUnits / total) * 0.3)
+  } else if (warningUnits > total * 0.3) {
+    zoneColor = '#ff8800'
+    intensity = 0.2
+  } else if (warningUnits > 0) {
+    zoneColor = '#ffcc00'
+    intensity = 0.15
+  }
+  
+  return (
+    <Circle
+      center={position}
+      radius={radius}
+      pathOptions={{
+        color: zoneColor,
+        fillColor: zoneColor,
+        fillOpacity: intensity,
+        weight: 2,
+        dashArray: '4, 4'
+      }}
+    />
   )
 }
 
@@ -203,101 +210,160 @@ const Legend = () => {
   const { statistics } = useStore()
   
   return (
-    <div className="absolute bottom-4 left-4 z-[1000] bg-white/95 rounded-lg shadow-lg p-4 border-2 border-gray-400">
-      <div className="font-bold text-sm mb-3 text-black">LPG Status Levels</div>
+    <div className="absolute bottom-4 left-4 z-[1000] bg-white/95 rounded-xl shadow-xl p-4 border border-gray-200">
+      <div className="font-bold text-black mb-3 text-sm">LPG Status</div>
       <div className="space-y-2 text-sm text-black">
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-full bg-[#ff0000]"></div>
-          <span className="font-medium">Critical (0-30%)</span>
+          <div className="w-4 h-4 rounded-full bg-[#ff0000]"></div>
+          <span className="font-medium">Critical: {statistics.criticalUnits}</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-full bg-[#ff8c00]"></div>
-          <span className="font-medium">Warning (31-70%)</span>
+          <div className="w-4 h-4 rounded-full bg-[#ff8c00]"></div>
+          <span className="font-medium">Warning: {statistics.warningUnits}</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-full bg-[#ffd000]"></div>
-          <span className="font-medium">Caution (31-70%)</span>
+          <div className="w-4 h-4 rounded-full bg-[#ffd000]"></div>
+          <span className="font-medium">Caution: {statistics.cautionUnits}</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-full bg-[#00cc00]"></div>
-          <span className="font-medium">Healthy (71-100%)</span>
+          <div className="w-4 h-4 rounded-full bg-[#00cc00]"></div>
+          <span className="font-medium">Healthy: {statistics.healthyUnits}</span>
         </div>
       </div>
-      <div className="mt-3 pt-3 border-t border-gray-300 text-xs text-black">
-        <div className="flex justify-between">
-          <span>Total:</span>
-          <span className="font-bold">{statistics.totalConsumers}</span>
-        </div>
+      <div className="mt-3 pt-2 border-t border-gray-200 text-xs text-gray-500">
+        Total: {statistics.totalConsumers} buildings
       </div>
     </div>
   )
 }
 
-const SupplyInfo = () => {
-  const { supplyUnit, statistics } = useStore()
+const SupplyStatusPanel = () => {
+  const { supplyUnit, statistics, activeDelivery, currentSupplyingCategory } = useStore()
   const percent = (supplyUnit.currentLevel / supplyUnit.capacity) * 100
-  const barColor = percent < 15 ? '#ff0000' : percent < 40 ? '#ff8c00' : percent < 70 ? '#ffd000' : '#00cc00'
+  const barColor = percent < 20 ? '#ff3333' : percent < 50 ? '#ff9900' : '#00cc00'
   
   return (
-    <div className="absolute top-4 left-4 z-[1000] bg-white/95 rounded-lg shadow-lg p-4 border-2 border-gray-400 min-w-[240px]">
-      <div className="font-bold text-black mb-3 flex items-center gap-2">
-        <span className="text-lg">🏭</span>
-        Central Supply Hub
+    <div className="absolute top-4 left-4 z-[1000] bg-white/95 rounded-xl shadow-xl p-4 border border-gray-200 min-w-[260px]">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: barColor }}>
+          <span className="text-xl">🏭</span>
+        </div>
+        <div>
+          <div className="font-bold text-black">Supply Hub</div>
+          <div className="text-xs text-gray-500">Distribution Center</div>
+        </div>
       </div>
+      
       <div className="space-y-2">
         <div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-700 font-medium">Stock:</span>
-            <span className="font-bold text-black">{Math.round(supplyUnit.currentLevel).toLocaleString()} kg</span>
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-gray-600 font-medium">Stock Level</span>
+            <span className="font-bold text-black">{Math.round(percent)}%</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-3 mt-1 overflow-hidden">
+          <div className="w-full bg-gray-200 rounded-full h-3">
             <div 
               className="h-3 rounded-full transition-all duration-500"
-              style={{ 
-                width: `${percent}%`,
-                backgroundColor: barColor
-              }}
+              style={{ width: `${percent}%`, backgroundColor: barColor }}
             />
           </div>
-          <div className="text-xs text-gray-500 mt-1 text-right">{percent.toFixed(1)}%</div>
+          <div className="text-xs text-gray-500 mt-1 text-right">
+            {Math.round(supplyUnit.currentLevel).toLocaleString()} / {supplyUnit.capacity.toLocaleString()} kg
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-sm">
+        
+        <div className="grid grid-cols-2 gap-2 text-sm pt-2 border-t border-gray-100">
           <div>
-            <span className="text-gray-700 font-medium">Capacity:</span>
-            <div className="font-bold text-black">{supplyUnit.capacity.toLocaleString()} kg</div>
+            <span className="text-gray-500 text-xs">Refills</span>
+            <div className="font-bold text-black">{statistics.totalRefills}</div>
           </div>
           <div>
-            <span className="text-gray-700 font-medium">Refills:</span>
-            <div className="font-bold text-black">{statistics.totalRefills}</div>
+            <span className="text-gray-500 text-xs">Flow Rate</span>
+            <div className="font-bold text-black">{supplyUnit.flowRate} kg/h</div>
           </div>
         </div>
       </div>
+      
+      {activeDelivery && (
+        <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
+          <div className="text-xs text-green-600 font-bold mb-1">⬆ SUPPLYING TO:</div>
+          <div className="text-sm text-black font-medium">{activeDelivery.buildingName}</div>
+          <div className="text-xs text-gray-600">
+            {getTypeConfig(activeDelivery.buildingType)?.label} • 
+            <span className="font-bold" style={{ color: getStatusColor(activeDelivery.status) }}>
+              {' '}{activeDelivery.status.toUpperCase()}
+            </span>
+          </div>
+          <div className="text-xs text-green-600 mt-1">
+            +{activeDelivery.refillAmount?.toFixed(1)} kg
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-const Filters = () => {
-  const { filters, setFilters } = useStore()
+const SimulationTime = () => {
+  const { simulationDay, simulationTime, isSimulationRunning } = useStore()
+  const [displayTime, setDisplayTime] = useState('08:00')
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const minutes = Math.floor(simulationTime % 60) * 60
+      const hours = 8 + Math.floor(minutes / 60) % 24
+      const mins = minutes % 60
+      setDisplayTime(`${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`)
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [simulationTime])
+  
+  return (
+    <div className="absolute top-4 right-4 z-[1000] bg-white/95 rounded-xl shadow-xl p-3 border border-gray-200">
+      <div className="text-xs text-gray-500 mb-1">Simulation</div>
+      <div className="flex items-center gap-2">
+        <div className={`w-2 h-2 rounded-full ${isSimulationRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+        <span className="font-bold text-black text-lg">Day {simulationDay}</span>
+      </div>
+      <div className="text-sm text-gray-600">{displayTime}</div>
+    </div>
+  )
+}
+
+const FilterPanel = () => {
+  const { filters, setFilters, buildings } = useStore()
+  
+  const counts = {
+    hospital: buildings.filter(b => b.type === 'hospital' && b.status !== 'healthy').length,
+    household: buildings.filter(b => b.type === 'household' && b.status !== 'healthy').length,
+    commercial: buildings.filter(b => b.type === 'commercial' && b.status !== 'healthy').length,
+    industrial: buildings.filter(b => b.type === 'industrial' && b.status !== 'healthy').length,
+    gas_station: buildings.filter(b => b.type === 'gas_station' && b.status !== 'healthy').length
+  }
   
   const toggleFilter = (type) => {
     setFilters({ ...filters, [type]: !filters[type] })
   }
   
   return (
-    <div className="absolute top-4 right-4 z-[1000] bg-white/95 rounded-lg shadow-lg p-4 border-2 border-gray-400">
-      <div className="font-bold text-sm mb-3 text-black">Building Types</div>
+    <div className="absolute top-32 right-4 z-[1000] bg-white/95 rounded-xl shadow-xl p-4 border border-gray-200">
+      <div className="font-bold text-sm text-black mb-3">Show Needy</div>
       <div className="space-y-2 text-sm">
         {Object.entries(filters).map(([type, enabled]) => {
           const config = getTypeConfig(type)
+          const count = counts[type] || 0
           return (
-            <label key={type} className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 p-1 rounded">
+            <label key={type} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
               <input
                 type="checkbox"
                 checked={enabled}
                 onChange={() => toggleFilter(type)}
-                className="w-4 h-4 rounded"
+                className="w-4 h-4"
               />
               <span className="text-black font-medium">{config.label}</span>
+              {count > 0 && (
+                <span className="ml-auto bg-red-100 text-red-600 px-2 py-0.5 rounded text-xs font-bold">
+                  {count}
+                </span>
+              )}
             </label>
           )
         })}
@@ -306,89 +372,49 @@ const Filters = () => {
   )
 }
 
-const LiveStatus = () => {
-  const { isSimulationRunning, activeDelivery, buildings, statistics } = useStore()
-  const [time, setTime] = useState(new Date())
-  
-  useEffect(() => {
-    const interval = setInterval(() => setTime(new Date()), 1000)
-    return () => clearInterval(interval)
-  }, [])
-  
-  const deliveryBuilding = activeDelivery 
-    ? buildings.find(b => b.id === activeDelivery.buildingId) 
-    : null
-  
-  return (
-    <div className="absolute bottom-4 right-4 z-[1000] bg-white/95 rounded-lg shadow-lg p-3 border-2 border-gray-400">
-      <div className="text-xs text-gray-600 font-medium mb-1">Live Simulation</div>
-      <div className="flex items-center gap-2 mb-2">
-        <div className={`w-3 h-3 rounded-full ${isSimulationRunning ? 'bg-[#00cc00] animate-pulse' : 'bg-gray-400'}`}></div>
-        <span className="text-sm text-black font-medium">
-          {isSimulationRunning ? 'RUNNING' : 'PAUSED'}
-        </span>
-      </div>
-      <div className="text-xs text-gray-600 mb-1">{time.toLocaleTimeString()}</div>
-      
-      {activeDelivery && deliveryBuilding && (
-        <div className="mt-2 pt-2 border-t border-gray-300">
-          <div className="text-xs text-green-600 font-bold animate-pulse">
-            ▶ DELIVERING TO:
-          </div>
-          <div className="text-xs text-black font-medium mt-1">
-            {deliveryBuilding.name}
-          </div>
-          <div className="text-xs text-gray-600">
-            +{activeDelivery.refillAmount} kg
-          </div>
-        </div>
-      )}
-      
-      <div className="mt-2 pt-2 border-t border-gray-300 text-xs text-gray-600">
-        <div>Critical: <span className="font-bold text-red-600">{statistics.criticalUnits}</span></div>
-        <div>Warning: <span className="font-bold text-orange-500">{statistics.warningUnits}</span></div>
-      </div>
-    </div>
-  )
-}
-
-const SupplyConnections = ({ buildings, supplyUnit }) => {
-  const priorityBuildings = buildings
-    .filter(b => b.status !== 'healthy')
-    .slice(0, 8)
-  
-  return (
-    <>
-      {priorityBuildings.map(building => (
-        <Polyline
-          key={`line-${building.id}`}
-          positions={[
-            [supplyUnit.lat, supplyUnit.lng],
-            [building.lat, building.lng]
-          ]}
-          pathOptions={{
-            color: getStatusColor(building.status),
-            weight: 1.5,
-            opacity: 0.4,
-            dashArray: '6, 6'
-          }}
-        />
-      ))}
-    </>
-  )
-}
-
 export default function MapView() {
-  const { buildings, selectedBuilding, setSelectedBuilding, filters, supplyUnit, activeDelivery } = useStore()
+  const { 
+    buildings, 
+    selectedBuilding, 
+    setSelectedBuilding, 
+    filters, 
+    supplyUnit, 
+    activeDelivery 
+  } = useStore()
   
-  const center = [12.98, 77.73]
-  const zoom = 14
-  
-  const filteredBuildings = buildings.filter(b => filters[b.type])
+  const center = [12.975, 77.72]
+  const zoom = 13
   
   const deliveryProgress = activeDelivery 
     ? Math.min(1, (Date.now() - activeDelivery.startTime) / activeDelivery.duration)
     : 0
+  
+  const criticalBuildings = useMemo(() => {
+    return buildings.filter(b => 
+      b.status !== 'healthy' && filters[b.type]
+    )
+  }, [buildings, filters])
+  
+  const neighborhoodStats = useMemo(() => {
+    const stats = {}
+    Object.keys(NEIGHBORHOODS).forEach(name => {
+      stats[name] = { critical: 0, warning: 0, caution: 0, healthy: 0 }
+    })
+    
+    buildings.forEach(b => {
+      Object.entries(NEIGHBORHOODS).forEach(([name, area]) => {
+        const dist = Math.sqrt(
+          Math.pow((b.lat - area.center[0]) * 111, 2) + 
+          Math.pow((b.lng - area.center[1]) * 111 * Math.cos(area.center[0] * Math.PI / 180), 2)
+        )
+        if (dist < area.radius * 111) {
+          stats[name][b.status]++
+        }
+      })
+    })
+    
+    return stats
+  }, [buildings])
   
   return (
     <div className="w-full h-full relative">
@@ -398,9 +424,7 @@ export default function MapView() {
         style={{ width: '100%', height: '100%' }}
         scrollWheelZoom={true}
         zoomControl={true}
-        doubleClickZoom={true}
         dragging={true}
-        touchZoom={true}
       >
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
@@ -413,40 +437,45 @@ export default function MapView() {
           attribution='&copy; CartoDB'
           maxZoom={19}
           minZoom={10}
-          opacity={0.7}
+          opacity={0.6}
         />
+        
+        {Object.entries(NEIGHBORHOODS).map(([name, area]) => (
+          <DemandZone
+            key={name}
+            position={area.center}
+            radius={area.radius * 111000}
+            stats={neighborhoodStats[name]}
+          />
+        ))}
         
         <SupplyHubMarker 
-          position={[supplyUnit.lat, supplyUnit.lng]} 
+          position={[supplyUnit.lat, supplyUnit.lng]}
           isActive={!!activeDelivery}
+          supplyPercent={(supplyUnit.currentLevel / supplyUnit.capacity) * 100}
         />
         
-        <SupplyConnections buildings={buildings} supplyUnit={supplyUnit} />
-        
         {activeDelivery && (
-          <AnimatedSupplyLine
-            from={activeDelivery.from}
-            to={activeDelivery.to}
+          <AnimatedDelivery 
+            delivery={activeDelivery}
             progress={deliveryProgress}
-            isActive={true}
           />
         )}
         
-        {filteredBuildings.map(building => (
-          <BuildingMarker
+        {criticalBuildings.map(building => (
+          <CriticalBuildingMarker
             key={building.id}
             building={building}
             onSelect={setSelectedBuilding}
-            selected={selectedBuilding?.id === building.id}
-            isBeingDelivered={activeDelivery?.buildingId === building.id}
+            isActive={activeDelivery?.buildingId === building.id}
           />
         ))}
       </MapContainer>
       
       <Legend />
-      <SupplyInfo />
-      <Filters />
-      <LiveStatus />
+      <SupplyStatusPanel />
+      <SimulationTime />
+      <FilterPanel />
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { generateBuildings, generateSupplyUnit, getLPGStatus, CATEGORY_PRIORITY, STATUS_PRIORITY } from '../data/buildings'
+import { generateBuildings, generateSupplyUnit, getLPGStatus } from '../data/buildings'
 
 const generateInitialState = () => {
   const buildings = generateBuildings()
@@ -14,15 +14,13 @@ const generateInitialState = () => {
     buildings,
     supplyUnit,
     selectedBuilding: null,
-    hoveredBuilding: null,
     activeTab: 'twin',
     isSimulationRunning: true,
     simulationSpeed: 1,
-    currentTime: new Date('2026-04-04T08:00:00'),
-    dayNumber: 1,
+    simulationDay: 1,
+    simulationTime: 0,
     crisisMode: false,
     alerts: [],
-    showHeatmap: false,
     filters: {
       hospital: true,
       household: true,
@@ -31,15 +29,14 @@ const generateInitialState = () => {
       gas_station: true
     },
     activeDelivery: null,
-    supplyQueue: [],
+    deliveryQueue: [],
+    currentSupplyingCategory: null,
     statistics: {
       totalConsumers: buildings.length,
       criticalUnits: criticalCount,
       warningUnits: warningCount,
       cautionUnits: cautionCount,
       healthyUnits: healthyCount,
-      supplyEfficiency: 100,
-      aiAccuracy: 91,
       totalRefills: 0,
       totalConsumed: 0
     }
@@ -50,9 +47,7 @@ export const useStore = create((set, get) => ({
   ...generateInitialState(),
   
   setSelectedBuilding: (building) => set({ selectedBuilding: building }),
-  setHoveredBuilding: (building) => set({ hoveredBuilding: building }),
   setActiveTab: (tab) => set({ activeTab: tab }),
-  setShowHeatmap: (show) => set({ showHeatmap: show }),
   setFilters: (filters) => set({ filters }),
   
   toggleSimulation: () => set((state) => ({ 
@@ -65,7 +60,7 @@ export const useStore = create((set, get) => ({
     const state = get()
     if (!state.isSimulationRunning) return
     
-    const speedMultiplier = state.simulationSpeed * 0.5
+    const speedMultiplier = state.simulationSpeed * 0.3
     const timeAdvanceSeconds = (deltaTime / 1000) * speedMultiplier
     const simulatedDays = timeAdvanceSeconds / 60
     
@@ -87,46 +82,37 @@ export const useStore = create((set, get) => ({
         }
       })
       
-      const totalConsumption = newBuildings.reduce((sum, b) => sum + (b.dailyConsumption || 0), 0)
-      const supplyUsed = totalConsumption * simulatedDays
-      const newSupplyLevel = Math.max(0, state.supplyUnit.currentLevel - supplyUsed)
-      const supplyPercent = (newSupplyLevel / state.supplyUnit.capacity) * 100
-      
       const criticalCount = newBuildings.filter(b => b.status === 'critical').length
       const warningCount = newBuildings.filter(b => b.status === 'warning').length
       const cautionCount = newBuildings.filter(b => b.status === 'caution').length
       const healthyCount = newBuildings.filter(b => b.status === 'healthy').length
       
-      const newTime = new Date(state.currentTime)
-      newTime.setSeconds(newTime.getSeconds() + timeAdvanceSeconds)
-      const newDay = Math.max(1, Math.floor(simulatedDays) + state.dayNumber)
+      const newSimulationTime = state.simulationTime + timeAdvanceSeconds
+      const newDay = Math.floor(newSimulationTime / 60) + 1
       
-      const crisisMode = supplyPercent < 15 || criticalCount > newBuildings.length * 0.08
+      const crisisMode = criticalCount > newBuildings.length * 0.05
       
       return {
         buildings: newBuildings,
-        supplyUnit: { ...state.supplyUnit, currentLevel: newSupplyLevel },
-        currentTime: newTime,
-        dayNumber: newDay,
+        simulationTime: newSimulationTime,
+        simulationDay: newDay,
         crisisMode,
         statistics: {
           ...state.statistics,
           criticalUnits: criticalCount,
           warningUnits: warningCount,
           cautionUnits: cautionCount,
-          healthyUnits: healthyCount,
-          supplyEfficiency: Math.round((newSupplyLevel / state.supplyUnit.capacity) * 100),
-          totalConsumed: state.statistics.totalConsumed + supplyUsed
+          healthyUnits: healthyCount
         }
       }
     })
   },
   
-  selectNextRecipient: () => {
+  findNextRecipient: () => {
     const state = get()
     
     const needyBuildings = state.buildings.filter(b => 
-      b.status === 'warning' || b.status === 'critical' || b.status === 'caution'
+      b.status !== 'healthy'
     )
     
     if (needyBuildings.length === 0) return null
@@ -142,28 +128,40 @@ export const useStore = create((set, get) => ({
     return needyBuildings[0]
   },
   
-  startDelivery: (buildingId) => {
+  startSupplyDelivery: () => {
     const state = get()
-    const building = state.buildings.find(b => b.id === buildingId)
     
-    if (!building || state.activeDelivery) return
+    if (state.activeDelivery) return
+    if (state.supplyUnit.currentLevel < 50) return
     
-    if (state.supplyUnit.currentLevel < building.refillAmount) return
+    const recipient = get().findNextRecipient()
+    if (!recipient) return
     
-    const supplyNeeded = building.refillAmount
-    const newSupplyLevel = state.supplyUnit.currentLevel - supplyNeeded
+    const refillPercent = (recipient.refillAmount / recipient.capacity) * 100
+    const actualRefill = Math.min(
+      recipient.refillAmount,
+      (recipient.capacity * (100 - recipient.lpgLevel)) / 100
+    )
+    
+    const newSupplyLevel = state.supplyUnit.currentLevel - actualRefill
     
     set({
       activeDelivery: {
-        buildingId: building.id,
+        buildingId: recipient.id,
+        buildingName: recipient.name,
+        buildingType: recipient.type,
+        status: recipient.status,
         startTime: Date.now(),
-        duration: 4000,
-        from: [state.supplyUnit.lat, state.supplyUnit.lng],
-        to: [building.lat, building.lng],
-        refillAmount: supplyNeeded,
-        targetBuilding: building
+        duration: 3000,
+        from: { lat: state.supplyUnit.lat, lng: state.supplyUnit.lng },
+        to: { lat: recipient.lat, lng: recipient.lng },
+        refillAmount: actualRefill,
+        startLevel: recipient.lpgLevel,
+        targetLevel: Math.min(100, recipient.lpgLevel + refillPercent)
       },
-      supplyUnit: { ...state.supplyUnit, currentLevel: newSupplyLevel }
+      supplyUnit: { ...state.supplyUnit, currentLevel: Math.max(0, newSupplyLevel) },
+      currentSupplyingCategory: recipient.type,
+      deliveryQueue: state.deliveryQueue.filter(id => id !== recipient.id)
     })
   },
   
@@ -175,8 +173,8 @@ export const useStore = create((set, get) => ({
     const building = state.buildings.find(b => b.id === buildingId)
     
     if (building) {
-      const refillPercent = (refillAmount / building.capacity) * 100
-      const newLevel = Math.min(100, building.lpgLevel + refillPercent)
+      const actualRefillPercent = (refillAmount / building.capacity) * 100
+      const newLevel = Math.min(100, building.lpgLevel + actualRefillPercent)
       const newStatus = getLPGStatus(newLevel)
       const daysRemaining = (newLevel / 100) * building.capacity / building.dailyConsumption
       
@@ -187,39 +185,45 @@ export const useStore = create((set, get) => ({
             : b
         ),
         activeDelivery: null,
+        currentSupplyingCategory: null,
         statistics: {
           ...state.statistics,
           totalRefills: state.statistics.totalRefills + 1
         }
       })
     } else {
-      set({ activeDelivery: null })
+      set({ activeDelivery: null, currentSupplyingCategory: null })
     }
   },
   
   cancelDelivery: () => {
     const state = get()
     if (state.activeDelivery) {
-      const refundAmount = state.activeDelivery.refillAmount
       set({
         activeDelivery: null,
-        supplyUnit: { ...state.supplyUnit, currentLevel: state.supplyUnit.currentLevel + refundAmount }
+        currentSupplyingCategory: null,
+        supplyUnit: { 
+          ...state.supplyUnit, 
+          currentLevel: state.supplyUnit.currentLevel + (state.activeDelivery.refillAmount || 0)
+        }
       })
     }
   },
   
   refillSupply: () => {
     set((state) => ({
-      supplyUnit: {
-        ...state.supplyUnit,
-        currentLevel: state.supplyUnit.capacity
-      },
-      buildings: state.buildings.map(b => ({
-        ...b,
-        lpgLevel: 70 + Math.random() * 20,
-        status: 'healthy',
-        daysRemaining: (70 + Math.random() * 20) / 100 * b.capacity / b.dailyConsumption
-      }))
+      supplyUnit: { ...state.supplyUnit, currentLevel: state.supplyUnit.capacity },
+      buildings: state.buildings.map(b => {
+        const newLevel = 70 + Math.random() * 20
+        return {
+          ...b,
+          lpgLevel: newLevel,
+          status: getLPGStatus(newLevel),
+          daysRemaining: (newLevel / 100) * b.capacity / b.dailyConsumption
+        }
+      }),
+      activeDelivery: null,
+      currentSupplyingCategory: null
     }))
   },
   

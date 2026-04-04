@@ -10,20 +10,21 @@ const tabs = [
 ]
 
 function Header() {
-  const { activeTab, setActiveTab, supplyUnit, currentTime, dayNumber } = useStore()
+  const { activeTab, setActiveTab, supplyUnit, simulationDay, simulationTime } = useStore()
   
   const supplyPercent = (supplyUnit.currentLevel / supplyUnit.capacity) * 100
   
-  const formatTime = (date) => {
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    })
+  const formatTime = () => {
+    const minutes = Math.floor(simulationTime % 60) * 60
+    const hours = 8 + Math.floor(minutes / 60) % 24
+    const mins = minutes % 60
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
   }
   
-  const formatDate = (date) => {
-    return date.toLocaleDateString('en-US', { 
+  const formatDate = () => {
+    const baseDate = new Date('2026-04-04')
+    baseDate.setDate(baseDate.getDate() + simulationDay - 1)
+    return baseDate.toLocaleDateString('en-US', { 
       weekday: 'short',
       month: 'short', 
       day: 'numeric'
@@ -66,10 +67,10 @@ function Header() {
       <div className="flex items-center gap-6">
         <div className="text-right">
           <div className="font-mono text-sm text-text-primary">
-            {formatTime(currentTime)}
+            {formatTime()}
           </div>
           <div className="text-xs text-text-muted">
-            Day {dayNumber} • {formatDate(currentTime)}
+            Day {simulationDay} • {formatDate()}
           </div>
         </div>
         

@@ -6,7 +6,6 @@ import MapView from './components/map/MapView'
 import DetailPanel from './components/panel/DetailPanel'
 import AnalyticsDashboard from './components/dashboard/AnalyticsDashboard'
 import CrisisPanel from './components/crisis/CrisisPanel'
-import SupplyNetwork from './components/network/SupplyNetwork'
 
 function App() {
   const { 
@@ -16,16 +15,14 @@ function App() {
     isSimulationRunning,
     updateSimulation,
     activeDelivery,
-    selectNextRecipient,
-    startDelivery,
+    startSupplyDelivery,
     completeDelivery,
-    buildings,
     supplyUnit
   } = useStore()
   
   const lastTimeRef = useRef(Date.now())
-  const deliveryTimerRef = useRef(0)
-  const deliveryInProgressRef = useRef(false)
+  const supplyTimerRef = useRef(0)
+  const supplyInProgressRef = useRef(false)
   
   useEffect(() => {
     let animationId
@@ -38,25 +35,21 @@ function App() {
       if (isSimulationRunning) {
         updateSimulation(deltaTime)
         
-        if (!deliveryInProgressRef.current) {
-          deliveryTimerRef.current += deltaTime
-          
-          if (deliveryTimerRef.current >= 5000) {
-            deliveryTimerRef.current = 0
-            
-            const recipient = selectNextRecipient()
-            if (recipient && supplyUnit.currentLevel >= recipient.refillAmount) {
-              deliveryInProgressRef.current = true
-              startDelivery(recipient.id)
-            }
-          }
-        }
-        
         if (activeDelivery) {
           const elapsed = currentTime - activeDelivery.startTime
           if (elapsed >= activeDelivery.duration) {
             completeDelivery()
-            deliveryInProgressRef.current = false
+            supplyInProgressRef.current = false
+          }
+        } else {
+          supplyTimerRef.current += deltaTime
+          
+          if (supplyTimerRef.current >= 4000) {
+            supplyTimerRef.current = 0
+            
+            if (supplyUnit.currentLevel >= 50) {
+              startSupplyDelivery()
+            }
           }
         }
       }
@@ -67,7 +60,7 @@ function App() {
     animationId = requestAnimationFrame(animate)
     
     return () => cancelAnimationFrame(animationId)
-  }, [isSimulationRunning, updateSimulation, activeDelivery, selectNextRecipient, startDelivery, completeDelivery, supplyUnit.currentLevel])
+  }, [isSimulationRunning, updateSimulation, activeDelivery, completeDelivery, startSupplyDelivery, supplyUnit.currentLevel])
   
   return (
     <div className="w-full h-full bg-bg-primary overflow-hidden">
@@ -92,12 +85,6 @@ function App() {
             <CrisisPanel />
           </div>
         )}
-        
-        {activeTab === 'network' && (
-          <div className="flex-1 relative">
-            <SupplyNetwork />
-          </div>
-        )}
       </main>
       
       <ControlBar />
@@ -106,7 +93,7 @@ function App() {
         <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in">
           <div className="glass px-6 py-3 rounded-lg border border-status-red/50 bg-status-red/20 flex items-center gap-3">
             <div className="w-3 h-3 rounded-full bg-status-red animate-pulse"></div>
-            <span className="text-status-red font-semibold">SUPPLY CRISIS ALERT</span>
+            <span className="text-status-red font-semibold">CRISIS MODE</span>
             <button 
               onClick={() => useStore.setState({ activeTab: 'crisis' })}
               className="ml-4 px-3 py-1 bg-status-red/30 hover:bg-status-red/50 rounded text-sm transition-colors"
