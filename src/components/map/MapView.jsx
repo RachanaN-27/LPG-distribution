@@ -19,6 +19,72 @@ const NEIGHBORHOODS = {
   Bellandur: { center: [12.9355, 77.6745], radius: 0.012 }
 }
 
+const WHITEFIELD_ROADS = {
+  vertical: [
+    { lng: 77.70, latMin: 12.92, latMax: 13.02 },
+    { lng: 77.71, latMin: 12.92, latMax: 13.02 },
+    { lng: 77.72, latMin: 12.92, latMax: 13.02 },
+    { lng: 77.73, latMin: 12.92, latMax: 13.02 },
+    { lng: 77.735, latMin: 12.92, latMax: 13.02 },
+    { lng: 77.74, latMin: 12.92, latMax: 13.02 },
+  ],
+  horizontal: [
+    { lat: 12.92, lngMin: 77.68, lngMax: 77.75 },
+    { lat: 12.94, lngMin: 77.68, lngMax: 77.75 },
+    { lat: 12.96, lngMin: 77.68, lngMax: 77.75 },
+    { lat: 12.975, lngMin: 77.68, lngMax: 77.75 },
+    { lat: 12.98, lngMin: 77.68, lngMax: 77.75 },
+    { lat: 12.99, lngMin: 77.68, lngMax: 77.75 },
+    { lat: 13.00, lngMin: 77.68, lngMax: 77.75 },
+  ]
+}
+
+function snapToRoadLat(lat, roadLats) {
+  let closest = roadLats[0]
+  let minDist = Math.abs(lat - closest)
+  for (const road of roadLats) {
+    const dist = Math.abs(lat - road)
+    if (dist < minDist) {
+      minDist = dist
+      closest = road
+    }
+  }
+  return closest
+}
+
+function snapToRoadLng(lng, roadLngs) {
+  let closest = roadLngs[0]
+  let minDist = Math.abs(lng - closest)
+  for (const road of roadLngs) {
+    const dist = Math.abs(lng - road)
+    if (dist < minDist) {
+      minDist = dist
+      closest = road
+    }
+  }
+  return closest
+}
+
+async function getRealRoadPath(startLat, startLng, endLat, endLng) {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`
+    const response = await fetch(url)
+    const data = await response.json()
+    
+    if (data.routes && data.routes.length > 0) {
+      const geojson = data.routes[0].geometry.coordinates
+      return geojson.map(([lng, lat]) => [lat, lng])
+    }
+  } catch (e) {
+    console.log('OSRM routing failed, using straight line:', e.message)
+  }
+  return [[startLat, startLng], [endLat, endLng]]
+}
+
+function getStraightPath(startLat, startLng, endLat, endLng) {
+  return [[startLat, startLng], [endLat, endLng]]
+}
+
 const SupplyHubMarker = ({ position, isActive, supplyPercent }) => {
   const hubColor = supplyPercent < 20 ? '#ff3333' : supplyPercent < 50 ? '#ff9900' : '#00aa00'
   
@@ -51,23 +117,48 @@ const SupplyHubMarker = ({ position, isActive, supplyPercent }) => {
 }
 
 const AnimatedDelivery = ({ delivery, progress }) => {
+  const [roadPath, setRoadPath] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+  
+  useEffect(() => {
+    if (!delivery) return
+    
+    const fetchPath = async () => {
+      setIsLoading(true)
+      const path = await getRealRoadPath(delivery.from.lat, delivery.from.lng, delivery.to.lat, delivery.to.lng)
+      setRoadPath(path)
+      setIsLoading(false)
+    }
+    
+    fetchPath()
+  }, [delivery?.from?.lat, delivery?.from?.lng, delivery?.to?.lat, delivery?.to?.lng])
+  
   if (!delivery) return null
   
   const { from, to } = delivery
   const lat1 = from.lat, lng1 = from.lng
   const lat2 = to.lat, lng2 = to.lng
   
-  const currentLat = lat1 + (lat2 - lat1) * progress
-  const currentLng = lng1 + (lng2 - lng1) * progress
+  const path = roadPath || getStraightPath(lat1, lng1, lat2, lng2)
+  
+  const pathIndex = Math.floor(progress * (path.length - 1))
+  const nextIndex = Math.min(pathIndex + 1, path.length - 1)
+  const localT = (progress * (path.length - 1)) - pathIndex
+  
+  const currentLat = path[pathIndex][0] + (path[nextIndex][0] - path[pathIndex][0]) * localT
+  const currentLng = path[pathIndex][1] + (path[nextIndex][1] - path[pathIndex][1]) * localT
   
   const linePositions = []
   const steps = 30
   for (let i = 0; i <= steps * progress; i++) {
-    const t = (i / steps)
-    linePositions.push([
-      lat1 + (lat2 - lat1) * t,
-      lng1 + (lng2 - lng1) * t
-    ])
+    const t = i / steps
+    const posIndex = Math.floor(t * (path.length - 1))
+    const nextPosIndex = Math.min(posIndex + 1, path.length - 1)
+    const posLocalT = (t * (path.length - 1)) - posIndex
+    
+    const lat = path[posIndex][0] + (path[nextPosIndex][0] - path[posIndex][0]) * posLocalT
+    const lng = path[posIndex][1] + (path[nextPosIndex][1] - path[posIndex][1]) * posLocalT
+    linePositions.push([lat, lng])
   }
   
   return (

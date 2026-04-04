@@ -6,6 +6,7 @@ import MapView from './components/map/MapView'
 import DetailPanel from './components/panel/DetailPanel'
 import AnalyticsDashboard from './components/dashboard/AnalyticsDashboard'
 import CrisisPanel from './components/crisis/CrisisPanel'
+import SupplyNetwork from './components/network/SupplyNetwork'
 
 function App() {
   const { 
@@ -83,6 +84,12 @@ function App() {
         {activeTab === 'crisis' && (
           <div className="w-full p-6 overflow-auto">
             <CrisisPanel />
+          </div>
+        )}
+        
+        {activeTab === 'network' && (
+          <div className="flex-1 relative">
+            <SupplyNetwork />
           </div>
         )}
       </main>

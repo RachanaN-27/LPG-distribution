@@ -62,22 +62,96 @@ function SupplyNode({ position, level, maxLevel, type, name, id }) {
   )
 }
 
+const ROAD_GRID_SIZE = 25
+const ROAD_SPACING = 5
+
+function getRoads() {
+  const roads = { vertical: [], horizontal: [] }
+  
+  for (let i = -ROAD_GRID_SIZE; i <= ROAD_GRID_SIZE; i += ROAD_SPACING) {
+    roads.vertical.push({ x: i })
+    roads.horizontal.push({ z: i })
+  }
+  
+  return roads
+}
+
+function snapToRoad(coordinate, roadCoordinates) {
+  let closest = roadCoordinates[0]
+  let minDist = Math.abs(coordinate - closest)
+  
+  for (const road of roadCoordinates) {
+    const dist = Math.abs(coordinate - road)
+    if (dist < minDist) {
+      minDist = dist
+      closest = road
+    }
+  }
+  
+  return closest
+}
+
+function findRoadPath(startPos, endPos) {
+  const roads = getRoads()
+  const roadX = roads.vertical.map(r => r.x)
+  const roadZ = roads.horizontal.map(r => r.z)
+  
+  const startX = startPos[0]
+  const startZ = startPos[2]
+  const endX = endPos[0]
+  const endZ = endPos[2]
+  
+  const nearestStartX = snapToRoad(startX, roadX)
+  const nearestStartZ = snapToRoad(startZ, roadZ)
+  const nearestEndX = snapToRoad(endX, roadX)
+  const nearestEndZ = snapToRoad(endZ, roadZ)
+  
+  const points = []
+  points.push(new THREE.Vector3(startX, 0.15, startZ))
+  
+  if (Math.abs(startX - nearestStartX) > 0.5) {
+    points.push(new THREE.Vector3(nearestStartX, 0.15, startZ))
+  }
+  if (Math.abs(startZ - nearestStartZ) > 0.5) {
+    points.push(new THREE.Vector3(nearestStartX, 0.15, nearestStartZ))
+  }
+  
+  if (nearestStartX !== nearestEndX) {
+    points.push(new THREE.Vector3(nearestEndX, 0.15, nearestStartZ))
+  }
+  if (nearestStartZ !== nearestEndZ) {
+    points.push(new THREE.Vector3(nearestEndX, 0.15, nearestEndZ))
+  }
+  
+  if (Math.abs(endX - nearestEndX) > 0.5) {
+    points.push(new THREE.Vector3(nearestEndX, 0.15, endZ))
+  }
+  points.push(new THREE.Vector3(endX, 0.15, endZ))
+  
+  return points
+}
+
 function FlowLine({ start, end, progress, isActive, isInQueue }) {
   const points = useMemo(() => {
-    const startVec = new THREE.Vector3(...start)
-    const endVec = new THREE.Vector3(...end)
-    const mid = new THREE.Vector3(
-      (start.x + end.x) / 2,
-      Math.max(start.y, end.y) + 3,
-      (start.z + end.z) / 2
-    )
-    
-    const curve = new THREE.QuadraticBezierCurve3(startVec, mid, endVec)
-    return curve.getPoints(50)
+    try {
+      const pathPoints = findRoadPath(start, end)
+      if (!pathPoints || pathPoints.length < 2) {
+        return [new THREE.Vector3(...start), new THREE.Vector3(...end)]
+      }
+      return pathPoints
+    } catch (e) {
+      return [new THREE.Vector3(...start), new THREE.Vector3(...end)]
+    }
   }, [start, end])
   
   const geometry = useMemo(() => {
-    return new THREE.BufferGeometry().setFromPoints(points)
+    try {
+      const geo = new THREE.BufferGeometry().setFromPoints(points)
+      geo.computeLineDistances()
+      return geo
+    } catch (e) {
+      return new THREE.BufferGeometry()
+    }
   }, [points])
   
   const lineOpacity = isActive ? 0.8 : isInQueue ? 0.4 : 0.1
@@ -97,7 +171,7 @@ function FlowLine({ start, end, progress, isActive, isInQueue }) {
 }
 
 function NetworkVisualization() {
-  const { buildings, supplyUnit } = useStore()
+  const { buildings, supplyUnit, activeDelivery, deliveryQueue } = useStore()
   const groupRef = React.useRef()
   
   const hospitals = buildings.filter(b => b.type === 'hospital').slice(0, 4)
