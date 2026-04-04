@@ -11,9 +11,10 @@ const tabs = [
 ]
 
 function Header() {
-  const { activeTab, setActiveTab, supplyUnit, simulationDay, simulationTime } = useStore()
+  const { activeTab, setActiveTab, supplyUnits, simulationDay, simulationTime } = useStore()
   
-  const supplyPercent = (supplyUnit.currentLevel / supplyUnit.capacity) * 100
+  const primarySupply = supplyUnits?.[0]
+  const supplyPercent = primarySupply ? (primarySupply.currentLevel / primarySupply.capacity) * 100 : 0
   
   const formatTime = () => {
     const minutes = Math.floor(simulationTime % 60) * 60

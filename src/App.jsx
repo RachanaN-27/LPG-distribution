@@ -16,15 +16,14 @@ function App() {
     crisisMode,
     isSimulationRunning,
     updateSimulation,
-    activeDelivery,
+    activeDeliveries,
     startSupplyDelivery,
     completeDelivery,
-    supplyUnit
+    supplyUnits
   } = useStore()
   
   const lastTimeRef = useRef(Date.now())
   const supplyTimerRef = useRef(0)
-  const supplyInProgressRef = useRef(false)
   
   useEffect(() => {
     let animationId
@@ -37,19 +36,22 @@ function App() {
       if (isSimulationRunning) {
         updateSimulation(deltaTime)
         
-        if (activeDelivery) {
-          const elapsed = currentTime - activeDelivery.startTime
-          if (elapsed >= activeDelivery.duration) {
-            completeDelivery()
-            supplyInProgressRef.current = false
+        activeDeliveries.forEach(delivery => {
+          const elapsed = currentTime - delivery.startTime
+          if (elapsed >= delivery.duration) {
+            completeDelivery(delivery.id)
           }
-        } else {
+        })
+        
+        const maxActive = 20
+        if (activeDeliveries.length < maxActive) {
           supplyTimerRef.current += deltaTime
           
           if (supplyTimerRef.current >= 4000) {
             supplyTimerRef.current = 0
             
-            if (supplyUnit.currentLevel >= 50) {
+            const anyUnitHasFuel = supplyUnits.some(u => u.currentLevel >= 50)
+            if (anyUnitHasFuel) {
               startSupplyDelivery()
             }
           }
@@ -62,7 +64,7 @@ function App() {
     animationId = requestAnimationFrame(animate)
     
     return () => cancelAnimationFrame(animationId)
-  }, [isSimulationRunning, updateSimulation, activeDelivery, completeDelivery, startSupplyDelivery, supplyUnit.currentLevel])
+  }, [isSimulationRunning, updateSimulation, activeDeliveries, completeDelivery, startSupplyDelivery, supplyUnits])
   
   return (
     <div className="w-full h-full bg-bg-primary overflow-hidden">

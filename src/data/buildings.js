@@ -387,18 +387,37 @@ export const generateBuildings = () => {
   }))
 }
 
+export const generateSupplyUnits = () => {
+  return [
+    {
+      id: 'central_supply',
+      name: 'Whitefield LPG Hub',
+      type: 'lpg',
+      lat: 12.9848,
+      lng: 77.7264,
+      capacity: 100000,
+      currentLevel: 85000,
+      pressure: 3.5,
+      temperature: 28,
+      flowRate: 250
+    },
+    {
+      id: 'biogas_station',
+      name: 'Green BioGas Station',
+      type: 'biogas',
+      lat: 12.9712,
+      lng: 77.7035,
+      capacity: 30000,
+      currentLevel: 25000,
+      pressure: 2.5,
+      temperature: 25,
+      flowRate: 150
+    }
+  ]
+}
+
 export const generateSupplyUnit = () => {
-  return {
-    id: 'central_supply',
-    name: 'Whitefield LPG Distribution Hub',
-    lat: 12.98,
-    lng: 77.73,
-    capacity: 100000,
-    currentLevel: 85000,
-    pressure: 3.5,
-    temperature: 28,
-    flowRate: 250
-  }
+  return generateSupplyUnits()[0]
 }
 
 export const getLPGStatus = (lpgLevel) => {

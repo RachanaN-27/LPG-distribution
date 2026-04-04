@@ -1,9 +1,10 @@
 import { create } from 'zustand'
-import { generateBuildings, generateSupplyUnit, getLPGStatus } from '../data/buildings'
+import { generateBuildings, generateSupplyUnits, getLPGStatus } from '../data/buildings'
 
 const generateInitialState = () => {
   const buildings = generateBuildings()
-  const supplyUnit = generateSupplyUnit()
+  const supplyUnits = generateSupplyUnits()
+  const supplyUnit = supplyUnits[0]
   
   const criticalCount = buildings.filter(b => b.status === 'critical').length
   const warningCount = buildings.filter(b => b.status === 'warning').length
@@ -12,6 +13,7 @@ const generateInitialState = () => {
   
   return {
     buildings,
+    supplyUnits,
     supplyUnit,
     selectedBuilding: null,
     activeTab: 'twin',
@@ -29,7 +31,7 @@ const generateInitialState = () => {
       industrial: true,
       gas_station: true
     },
-    activeDelivery: null,
+    activeDeliveries: [],
     deliveryQueue: [],
     currentSupplyingCategory: null,
     statistics: {
@@ -110,49 +112,170 @@ export const useStore = create((set, get) => ({
     })
   },
   
-  findNextRecipient: () => {
+  findNextRecipient: (excludeBuildingIds = [], supplyUnitType = null, allowMultiple = false) => {
     const state = get()
     
+    const activeBuildingIds = (state.activeDeliveries || []).map(d => d.buildingId)
+    const allExcluded = [...excludeBuildingIds, ...activeBuildingIds]
+    
     const needyBuildings = state.buildings.filter(b => 
-      b.status !== 'healthy'
+      b.status !== 'healthy' && !allExcluded.includes(b.id)
     )
     
     if (needyBuildings.length === 0) return null
     
-    needyBuildings.sort((a, b) => {
-      if (a.priority !== b.priority) {
-        return a.priority - b.priority
+    const supplyUnit = supplyUnitType 
+      ? state.supplyUnits.find(u => u.type === supplyUnitType)
+      : state.supplyUnits[0]
+    
+    const calculateDistance = (lat1, lng1, lat2, lng2) => {
+      const R = 6371
+      const dLat = (lat2 - lat1) * Math.PI / 180
+      const dLng = (lng2 - lng1) * Math.PI / 180
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLng/2) * Math.sin(dLng/2)
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+      return R * c
+    }
+    
+    const getDistanceScore = (building) => {
+      if (!supplyUnit) return 0
+      const dist = calculateDistance(supplyUnit.lat, supplyUnit.lng, building.lat, building.lng)
+      return dist
+    }
+    
+    if (allowMultiple) {
+      const priorityWeight = 10
+      const distanceWeight = 1
+      
+      const scoredBuildings = needyBuildings.map(b => {
+        const distanceScore = getDistanceScore(b)
+        const priorityScore = b.priority
+        const combinedScore = (priorityScore * priorityWeight) + (distanceScore * distanceWeight)
+        return { ...b, combinedScore, distance: distanceScore }
+      })
+      
+      scoredBuildings.sort((a, b) => {
+        if (a.combinedScore !== b.combinedScore) {
+          return a.combinedScore - b.combinedScore
+        }
+        const statusOrder = { critical: 1, warning: 2, caution: 3 }
+        return (statusOrder[a.status] || 4) - (statusOrder[b.status] || 4)
+      })
+      
+      const routeBuildings = [scoredBuildings[0]]
+      const maxRouteStops = 3
+      const maxRouteDistance = 3
+      
+      for (let i = 1; i < scoredBuildings.length && routeBuildings.length < maxRouteStops; i++) {
+        const lastBuilding = routeBuildings[routeBuildings.length - 1]
+        const distToNext = calculateDistance(lastBuilding.lat, lastBuilding.lng, scoredBuildings[i].lat, scoredBuildings[i].lng)
+        if (distToNext <= maxRouteDistance) {
+          routeBuildings.push(scoredBuildings[i])
+        }
+      }
+      
+      return routeBuildings
+    }
+    
+    const priorityWeight = 10
+    const distanceWeight = 1
+    
+    const scoredBuildings = needyBuildings.map(b => {
+      const distanceScore = getDistanceScore(b)
+      const priorityScore = b.priority
+      const combinedScore = (priorityScore * priorityWeight) + (distanceScore * distanceWeight)
+      return { ...b, combinedScore, distance: distanceScore }
+    })
+    
+    scoredBuildings.sort((a, b) => {
+      if (a.combinedScore !== b.combinedScore) {
+        return a.combinedScore - b.combinedScore
       }
       const statusOrder = { critical: 1, warning: 2, caution: 3 }
       return (statusOrder[a.status] || 4) - (statusOrder[b.status] || 4)
     })
     
-    return needyBuildings[0]
+    return [scoredBuildings[0]]
   },
-  
+
   startSupplyDelivery: () => {
     const state = get()
     
-    if (state.activeDelivery) return
-    if (state.supplyUnit.currentLevel < 50) return
+    const maxDeliveriesPerUnit = 10
+    const currentDeliveries = state.activeDeliveries || []
+    const lpgDeliveries = currentDeliveries.filter(d => d.supplyUnitType === 'lpg').length
+    const biogasDeliveries = currentDeliveries.filter(d => d.supplyUnitType === 'biogas').length
     
-    const recipient = get().findNextRecipient()
-    if (!recipient) return
+    if (lpgDeliveries >= maxDeliveriesPerUnit && biogasDeliveries >= maxDeliveriesPerUnit) return
     
-    const refillPercent = (recipient.refillAmount / recipient.capacity) * 100
-    const actualRefill = Math.min(
-      recipient.refillAmount,
-      (recipient.capacity * (100 - recipient.lpgLevel)) / 100
-    )
+    const supplyUnits = state.supplyUnits
+    const availableUnits = supplyUnits.filter(u => u.currentLevel >= 50)
     
-    const newSupplyLevel = state.supplyUnit.currentLevel - actualRefill
+    if (availableUnits.length === 0) return
     
-    // topNeedy calculation removed to avoid duplicate declarations; topQueue handles queue
+    const lpgUnit = supplyUnits.find(u => u.type === 'lpg')
+    const biogasUnit = supplyUnits.find(u => u.type === 'biogas')
     
-    // Build a top-needy queue of length maxQueueSize to display in the UI
+    const activeBuildingIds = currentDeliveries.map(d => d.buildingId)
+    
+    let supplyUnit
+    let routeBuildings = []
+    
+    const lpgHasCapacity = lpgUnit && lpgUnit.currentLevel >= 50 && lpgDeliveries < maxDeliveriesPerUnit
+    const biogasHasCapacity = biogasUnit && biogasUnit.currentLevel >= 50 && biogasDeliveries < maxDeliveriesPerUnit
+    
+    if (!lpgHasCapacity && !biogasHasCapacity) return
+    
+    if (lpgDeliveries < maxDeliveriesPerUnit && biogasDeliveries < maxDeliveriesPerUnit) {
+      if (lpgDeliveries <= biogasDeliveries && lpgHasCapacity) {
+        supplyUnit = lpgUnit
+        routeBuildings = get().findNextRecipient(activeBuildingIds, 'lpg', true)
+        if (!routeBuildings || routeBuildings.length === 0 || routeBuildings[0].priority > 2) {
+          if (biogasHasCapacity) {
+            supplyUnit = biogasUnit
+            routeBuildings = get().findNextRecipient(activeBuildingIds, 'biogas', true)
+          }
+        }
+      } else if (biogasHasCapacity) {
+        supplyUnit = biogasUnit
+        routeBuildings = get().findNextRecipient(activeBuildingIds, 'biogas', true)
+      }
+    } else if (lpgHasCapacity) {
+      supplyUnit = lpgUnit
+      routeBuildings = get().findNextRecipient(activeBuildingIds, 'lpg', true)
+    } else if (biogasHasCapacity) {
+      supplyUnit = biogasUnit
+      routeBuildings = get().findNextRecipient(activeBuildingIds, 'biogas', true)
+    }
+    
+    if (!supplyUnit || !routeBuildings || routeBuildings.length === 0) return
+    
+    const recipient = routeBuildings[0]
+    const stopPoints = routeBuildings.slice(1).map(b => ({ lat: b.lat, lng: b.lng }))
+    const refillAmount = routeBuildings.reduce((sum, b) => sum + Math.min(b.refillAmount, (b.capacity * (100 - b.lpgLevel)) / 100), 0)
+    
+    const newSupplyLevel = supplyUnit.currentLevel - refillAmount
+    
+    const trafficSpeed = Math.random()
+    const baseDuration = 15000
+    let duration
+    let speedType
+    if (trafficSpeed > 0.6) {
+      duration = baseDuration * 0.5
+      speedType = 'fast'
+    } else if (trafficSpeed > 0.3) {
+      duration = baseDuration
+      speedType = 'normal'
+    } else {
+      duration = baseDuration * 1.8
+      speedType = 'slow'
+    }
+    
     const maxQueue = state.maxQueueSize
     const topQueue = state.buildings
-      .filter(b => b.status !== 'healthy' && b.id !== recipient.id)
+      .filter(b => b.status !== 'healthy' && !routeBuildings.some(rb => rb.id === b.id))
       .sort((a, b) => {
         if (a.priority !== b.priority) return a.priority - b.priority
         const statusOrder = { critical: 1, warning: 2, caution: 3 }
@@ -161,31 +284,50 @@ export const useStore = create((set, get) => ({
       .slice(0, maxQueue)
       .map(b => b.id)
     
+    const newDelivery = {
+      id: `delivery_${Date.now()}`,
+      buildingId: recipient.id,
+      buildingName: recipient.name,
+      buildingType: recipient.type,
+      status: recipient.status,
+      startTime: Date.now(),
+      duration: duration,
+      speedType: speedType,
+      priorityNum: recipient.priority,
+      supplyUnitId: supplyUnit.id,
+      supplyUnitType: supplyUnit.type,
+      from: { lat: supplyUnit.lat, lng: supplyUnit.lng },
+      to: { lat: recipient.lat, lng: recipient.lng },
+      stopPoints: stopPoints,
+      routeBuildings: routeBuildings.map(b => b.id),
+      refillAmount: refillAmount,
+      startLevel: recipient.lpgLevel,
+      targetLevel: Math.min(100, recipient.lpgLevel + (refillAmount / recipient.capacity) * 100),
+      totalStops: routeBuildings.length
+    }
+    
+    const updatedSupplyUnits = supplyUnits.map(u => {
+      if (u.id === supplyUnit.id) {
+        return { ...u, currentLevel: Math.max(0, newSupplyLevel) }
+      }
+      return u
+    })
+    
     set({
-      activeDelivery: {
-        buildingId: recipient.id,
-        buildingName: recipient.name,
-        buildingType: recipient.type,
-        status: recipient.status,
-        startTime: Date.now(),
-        duration: 3000,
-        from: { lat: state.supplyUnit.lat, lng: state.supplyUnit.lng },
-        to: { lat: recipient.lat, lng: recipient.lng },
-        refillAmount: actualRefill,
-        startLevel: recipient.lpgLevel,
-        targetLevel: Math.min(100, recipient.lpgLevel + refillPercent)
-      },
-      supplyUnit: { ...state.supplyUnit, currentLevel: Math.max(0, newSupplyLevel) },
+      activeDeliveries: [...state.activeDeliveries, newDelivery],
+      supplyUnits: updatedSupplyUnits,
+      supplyUnit: updatedSupplyUnits[0],
       currentSupplyingCategory: recipient.type,
       deliveryQueue: topQueue
     })
   },
   
-  completeDelivery: () => {
+  completeDelivery: (deliveryId) => {
     const state = get()
-    if (!state.activeDelivery) return
+    const delivery = state.activeDeliveries.find(d => d.id === deliveryId)
+    if (!delivery) return
     
-    const { buildingId, refillAmount } = state.activeDelivery
+    const { buildingId, refillAmount } = delivery
     const building = state.buildings.find(b => b.id === buildingId)
     
     if (building) {
@@ -210,8 +352,8 @@ export const useStore = create((set, get) => ({
             ? { ...b, lpgLevel: newLevel, status: newStatus, daysRemaining, lastRefill: new Date() }
             : b
         ),
-        activeDelivery: null,
-        currentSupplyingCategory: null,
+        activeDeliveries: state.activeDeliveries.filter(d => d.id !== deliveryId),
+        currentSupplyingCategory: state.activeDeliveries.length > 1 ? state.currentSupplyingCategory : null,
         deliveryQueue: topNeedy,
         statistics: {
           ...state.statistics,
@@ -219,39 +361,57 @@ export const useStore = create((set, get) => ({
         }
       })
     } else {
-      set({ activeDelivery: null, currentSupplyingCategory: null })
+      set({ 
+        activeDeliveries: state.activeDeliveries.filter(d => d.id !== deliveryId),
+        currentSupplyingCategory: state.activeDeliveries.length > 1 ? state.currentSupplyingCategory : null
+      })
     }
   },
   
-  cancelDelivery: () => {
+  cancelDelivery: (deliveryId) => {
     const state = get()
-    if (state.activeDelivery) {
-      set({
-        activeDelivery: null,
-        currentSupplyingCategory: null,
-        supplyUnit: { 
-          ...state.supplyUnit, 
-          currentLevel: state.supplyUnit.currentLevel + (state.activeDelivery.refillAmount || 0)
+    const delivery = state.activeDeliveries.find(d => d.id === deliveryId)
+    if (delivery) {
+      const updatedSupplyUnits = state.supplyUnits.map(u => {
+        if (u.id === delivery.supplyUnitId) {
+          return {
+            ...u,
+            currentLevel: u.currentLevel + (delivery.refillAmount || 0)
+          }
         }
+        return u
+      })
+      set({
+        activeDeliveries: state.activeDeliveries.filter(d => d.id !== deliveryId),
+        supplyUnits: updatedSupplyUnits,
+        supplyUnit: updatedSupplyUnits[0],
+        currentSupplyingCategory: state.activeDeliveries.length > 1 ? state.currentSupplyingCategory : null
       })
     }
   },
   
   refillSupply: () => {
-    set((state) => ({
-      supplyUnit: { ...state.supplyUnit, currentLevel: state.supplyUnit.capacity },
-      buildings: state.buildings.map(b => {
-        const newLevel = 70 + Math.random() * 20
-        return {
-          ...b,
-          lpgLevel: newLevel,
-          status: getLPGStatus(newLevel),
-          daysRemaining: (newLevel / 100) * b.capacity / b.dailyConsumption
-        }
-      }),
-      activeDelivery: null,
-      currentSupplyingCategory: null
-    }))
+    set((state) => {
+      const updatedSupplyUnits = state.supplyUnits.map(u => ({
+        ...u,
+        currentLevel: u.capacity
+      }))
+      return {
+        supplyUnits: updatedSupplyUnits,
+        supplyUnit: updatedSupplyUnits[0],
+        buildings: state.buildings.map(b => {
+          const newLevel = 70 + Math.random() * 20
+          return {
+            ...b,
+            lpgLevel: newLevel,
+            status: getLPGStatus(newLevel),
+            daysRemaining: (newLevel / 100) * b.capacity / b.dailyConsumption
+          }
+        }),
+        activeDeliveries: [],
+        currentSupplyingCategory: null
+      }
+    })
   },
   
   addAlert: (alert) => set((state) => ({

@@ -85,8 +85,9 @@ function getStraightPath(startLat, startLng, endLat, endLng) {
   return [[startLat, startLng], [endLat, endLng]]
 }
 
-const SupplyHubMarker = ({ position, isActive, supplyPercent }) => {
-  const hubColor = supplyPercent < 20 ? '#ff3333' : supplyPercent < 50 ? '#ff9900' : '#00aa00'
+const SupplyHubMarker = ({ position, isActive, supplyPercent, name, type }) => {
+  const hubColor = supplyPercent < 20 ? '#ff3333' : supplyPercent < 50 ? '#ff9900' : type === 'biogas' ? '#22c55e' : '#00aa00'
+  const displayName = name || 'Supply Hub'
   
   return (
     <CircleMarker
@@ -101,7 +102,7 @@ const SupplyHubMarker = ({ position, isActive, supplyPercent }) => {
     >
       <Popup>
         <div className="text-center p-2">
-          <div className="font-bold text-base text-black">Central Supply Hub</div>
+          <div className="font-bold text-base text-black">{displayName}</div>
           <div className="text-sm text-gray-600 mt-1">
             Stock: {Math.round(supplyPercent)}%
           </div>
@@ -116,24 +117,32 @@ const SupplyHubMarker = ({ position, isActive, supplyPercent }) => {
   )
 }
 
-const AnimatedDelivery = ({ delivery, progress }) => {
+const AnimatedDelivery = ({ delivery, progress, color = '#00ff00' }) => {
   const [roadPath, setRoadPath] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState(null)
   
   useEffect(() => {
-    if (!delivery) return
+    if (!delivery || !delivery.from || !delivery.to) return
     
     const fetchPath = async () => {
       setIsLoading(true)
-      const path = await getRealRoadPath(delivery.from.lat, delivery.from.lng, delivery.to.lat, delivery.to.lng)
-      setRoadPath(path)
-      setIsLoading(false)
+      setError(null)
+      try {
+        const path = await getRealRoadPath(delivery.from.lat, delivery.from.lng, delivery.to.lat, delivery.to.lng)
+        setRoadPath(path)
+      } catch (err) {
+        setError(err.message)
+        console.error('Route fetch error:', err)
+      } finally {
+        setIsLoading(false)
+      }
     }
     
     fetchPath()
   }, [delivery?.from?.lat, delivery?.from?.lng, delivery?.to?.lat, delivery?.to?.lng])
   
-  if (!delivery) return null
+  if (!delivery || !delivery.from || !delivery.to) return null
   
   const { from, to } = delivery
   const lat1 = from.lat, lng1 = from.lng
@@ -166,7 +175,7 @@ const AnimatedDelivery = ({ delivery, progress }) => {
       <Polyline
         positions={linePositions}
         pathOptions={{
-          color: '#00ff00',
+          color: color,
           weight: 5,
           opacity: 0.9,
           lineCap: 'round'
@@ -175,7 +184,7 @@ const AnimatedDelivery = ({ delivery, progress }) => {
       <Polyline
         positions={linePositions}
         pathOptions={{
-          color: '#88ff88',
+          color: color,
           weight: 2,
           opacity: 0.7,
           dashArray: '8, 12'
@@ -183,22 +192,12 @@ const AnimatedDelivery = ({ delivery, progress }) => {
       />
       <CircleMarker
         center={[currentLat, currentLng]}
-        radius={10}
+        radius={8}
         pathOptions={{
           color: '#ffffff',
-          fillColor: '#00ff00',
+          fillColor: color,
           fillOpacity: 1,
-          weight: 3
-        }}
-      />
-      <Circle
-        center={[currentLat, currentLng]}
-        radius={30}
-        pathOptions={{
-          color: '#00ff00',
-          fillColor: '#00ff00',
-          fillOpacity: 0.2,
-          weight: 1
+          weight: 2
         }}
       />
     </>
@@ -329,64 +328,85 @@ const Legend = () => {
 }
 
 const SupplyStatusPanel = () => {
-  const { supplyUnit, statistics, activeDelivery, currentSupplyingCategory } = useStore()
-  const percent = (supplyUnit.currentLevel / supplyUnit.capacity) * 100
-  const barColor = percent < 20 ? '#ff3333' : percent < 50 ? '#ff9900' : '#00cc00'
+  const { supplyUnits, statistics, activeDeliveries, currentSupplyingCategory } = useStore()
   
   return (
     <div className="absolute top-4 left-4 z-[1000] bg-white/95 rounded-xl shadow-xl p-4 border border-gray-200 min-w-[260px]">
       <div className="flex items-center gap-2 mb-3">
-        <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: barColor }}>
+        <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: '#00aa00' }}>
           <span className="text-xl">🏭</span>
         </div>
         <div>
-          <div className="font-bold text-black">Supply Hub</div>
-          <div className="text-xs text-gray-500">Distribution Center</div>
+          <div className="font-bold text-black">Supply Hubs</div>
+          <div className="text-xs text-gray-500">Distribution Centers</div>
         </div>
       </div>
       
-      <div className="space-y-2">
+      <div className="space-y-3">
+        {supplyUnits && supplyUnits.map(unit => {
+          const percent = (unit.currentLevel / unit.capacity) * 100
+          const barColor = percent < 20 ? '#ff3333' : percent < 50 ? '#ff9900' : unit.type === 'biogas' ? '#22c55e' : '#00cc00'
+          
+          return (
+            <div key={unit.id} className="border-b border-gray-100 pb-2 last:border-0">
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-gray-600 font-medium">{unit.name}</span>
+                <span className="font-bold text-black">{Math.round(percent)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${percent}%`, backgroundColor: barColor }}
+                />
+              </div>
+              <div className="text-xs text-gray-500 mt-1 text-right">
+                {Math.round(unit.currentLevel).toLocaleString()} / {unit.capacity.toLocaleString()} kg
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      
+      <div className="grid grid-cols-2 gap-2 text-sm pt-2 border-t border-gray-100">
         <div>
-          <div className="flex justify-between text-sm mb-1">
-            <span className="text-gray-600 font-medium">Stock Level</span>
-            <span className="font-bold text-black">{Math.round(percent)}%</span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-3">
-            <div 
-              className="h-3 rounded-full transition-all duration-500"
-              style={{ width: `${percent}%`, backgroundColor: barColor }}
-            />
-          </div>
-          <div className="text-xs text-gray-500 mt-1 text-right">
-            {Math.round(supplyUnit.currentLevel).toLocaleString()} / {supplyUnit.capacity.toLocaleString()} kg
-          </div>
+          <span className="text-gray-500 text-xs">Total Refills</span>
+          <div className="font-bold text-black">{statistics.totalRefills}</div>
         </div>
-        
-        <div className="grid grid-cols-2 gap-2 text-sm pt-2 border-t border-gray-100">
-          <div>
-            <span className="text-gray-500 text-xs">Refills</span>
-            <div className="font-bold text-black">{statistics.totalRefills}</div>
-          </div>
-          <div>
-            <span className="text-gray-500 text-xs">Flow Rate</span>
-            <div className="font-bold text-black">{supplyUnit.flowRate} kg/h</div>
-          </div>
+        <div>
+          <span className="text-gray-500 text-xs">Active</span>
+          <div className="font-bold text-black">{activeDeliveries?.length || 0}</div>
         </div>
       </div>
       
-      {activeDelivery && (
-        <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
-          <div className="text-xs text-green-600 font-bold mb-1">⬆ SUPPLYING TO:</div>
-          <div className="text-sm text-black font-medium">{activeDelivery.buildingName}</div>
-          <div className="text-xs text-gray-600">
-            {getTypeConfig(activeDelivery.buildingType)?.label} • 
-            <span className="font-bold" style={{ color: getStatusColor(activeDelivery.status) }}>
-              {' '}{activeDelivery.status.toUpperCase()}
-            </span>
-          </div>
-          <div className="text-xs text-green-600 mt-1">
-            +{activeDelivery.refillAmount?.toFixed(1)} kg
-          </div>
+      {activeDeliveries && activeDeliveries.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {activeDeliveries.map(delivery => {
+            const isBiogas = delivery.supplyUnitType === 'biogas'
+            const speedLabel = delivery.speedType === 'fast' ? '🚀 Fast' : delivery.speedType === 'slow' ? '🐢 Slow' : '🚗 Normal'
+            const speedColor = delivery.speedType === 'fast' ? 'text-green-600' : delivery.speedType === 'slow' ? 'text-orange-600' : 'text-blue-600'
+            return (
+              <div key={delivery.id} className={`p-2 rounded-lg border ${isBiogas ? 'bg-green-50 border-green-200' : 'bg-green-50 border-green-200'}`}>
+                <div className="flex justify-between items-center mb-1">
+                  <div className="text-xs text-green-600 font-bold">
+                    {isBiogas ? '🌱' : '⬆'} DELIVERING:
+                  </div>
+                  <div className={`text-xs ${speedColor} font-medium`}>
+                    {speedLabel}
+                  </div>
+                </div>
+                <div className="text-sm text-black font-medium">{delivery.buildingName}</div>
+                <div className="text-xs text-gray-600">
+                  {getTypeConfig(delivery.buildingType)?.label} • 
+                  <span className="font-bold" style={{ color: getStatusColor(delivery.status) }}>
+                    {' '}{delivery.status.toUpperCase()}
+                  </span>
+                </div>
+                <div className="text-xs text-green-600 mt-1">
+                  +{delivery.refillAmount?.toFixed(1)} kg
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -469,26 +489,22 @@ export default function MapView() {
     selectedBuilding, 
     setSelectedBuilding, 
     filters, 
-    supplyUnit, 
-    activeDelivery,
+    supplyUnits,
+    activeDeliveries,
     deliveryQueue
   } = useStore()
   
   const center = [12.975, 77.72]
   const zoom = 13
   
-  const deliveryProgress = activeDelivery 
-    ? Math.min(1, (Date.now() - activeDelivery.startTime) / activeDelivery.duration)
-    : 0
-  
   const criticalBuildings = useMemo(() => {
     return buildings.filter(b => {
-      const isActive = activeDelivery?.buildingId === b.id
+      const isActive = activeDeliveries?.some(d => d.buildingId === b.id)
       const isInQueue = deliveryQueue && Array.isArray(deliveryQueue) && deliveryQueue.includes(b.id)
       const isHighlighted = isActive || isInQueue
       return isHighlighted && filters[b.type]
     })
-  }, [buildings, filters, activeDelivery, deliveryQueue])
+  }, [buildings, filters, activeDeliveries, deliveryQueue])
   
   const neighborhoodStats = useMemo(() => {
     const stats = {}
@@ -522,47 +538,70 @@ export default function MapView() {
         dragging={true}
       >
         <TileLayer
-          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          attribution='&copy; Esri'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; OpenStreetMap'
           maxZoom={19}
           minZoom={10}
         />
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png"
-          attribution='&copy; CartoDB'
-          maxZoom={19}
-          minZoom={10}
-          opacity={0.6}
-        />
         
-        {Object.entries(NEIGHBORHOODS).map(([name, area]) => (
-          <DemandZone
-            key={name}
-            position={area.center}
-            radius={area.radius * 111000}
-            stats={neighborhoodStats[name]}
-          />
-        ))}
+        {supplyUnits && supplyUnits.map(unit => {
+          const isBiogas = unit.type === 'biogas'
+          return (
+            <CircleMarker
+              key={unit.id}
+              center={[unit.lat, unit.lng]}
+              radius={6}
+              pathOptions={{
+                color: '#000000',
+                fillColor: isBiogas ? '#22c55e' : '#00aa00',
+                fillOpacity: 1,
+                weight: 2
+              }}
+            >
+              <Popup>
+                <div className="text-center p-2">
+                  <div className="font-bold text-base text-black">{unit.name}</div>
+                  <div className="text-sm text-gray-600 mt-1">
+                    Stock: {Math.round((unit.currentLevel / unit.capacity) * 100)}%
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {isBiogas ? '🌱 Biogas' : '🔥 LPG'}
+                  </div>
+                </div>
+              </Popup>
+            </CircleMarker>
+          )
+        })}
         
-        <SupplyHubMarker 
-          position={[supplyUnit.lat, supplyUnit.lng]}
-          isActive={!!activeDelivery}
-          supplyPercent={(supplyUnit.currentLevel / supplyUnit.capacity) * 100}
-        />
-        
-        {activeDelivery && (
-          <AnimatedDelivery 
-            delivery={activeDelivery}
-            progress={deliveryProgress}
-          />
-        )}
+        {activeDeliveries && activeDeliveries.map(delivery => {
+          const progress = Math.min(1, (Date.now() - delivery.startTime) / delivery.duration)
+          const isBiogas = delivery.supplyUnitType === 'biogas'
+          let routeColor
+          if (isBiogas) {
+            if (delivery.priorityNum >= 3) {
+              routeColor = '#3b82f6'
+            } else {
+              routeColor = '#22c55e'
+            }
+          } else {
+            routeColor = '#00ff00'
+          }
+          return (
+            <AnimatedDelivery 
+              key={delivery.id}
+              delivery={delivery}
+              progress={progress}
+              color={routeColor}
+            />
+          )
+        })}
         
         {criticalBuildings.map(building => (
           <CriticalBuildingMarker
             key={building.id}
             building={building}
             onSelect={setSelectedBuilding}
-            isActive={activeDelivery?.buildingId === building.id}
+            isActive={activeDeliveries?.some(d => d.buildingId === building.id)}
           />
         ))}
       </MapContainer>
