@@ -4,13 +4,21 @@ import { OrbitControls, Text } from '@react-three/drei'
 import { useStore } from '../../stores/useStore'
 import * as THREE from 'three'
 
-function SupplyNode({ position, level, maxLevel, type, name }) {
+function SupplyNode({ position, level, maxLevel, type, name, id }) {
   const meshRef = React.useRef()
   const percent = (level / maxLevel) * 100
   const color = percent > 50 ? '#00ff88' : percent > 20 ? '#ffd000' : '#ff3366'
   
+  const { activeDelivery, deliveryQueue } = useStore()
+  
+  const isActiveSupplying = activeDelivery?.buildingId === id
+  const isInQueue = deliveryQueue && Array.isArray(deliveryQueue) && deliveryQueue.includes(id)
+  const opacity = isActiveSupplying ? 1 : isInQueue ? 0.6 : 0.1
+  
   useFrame((state) => {
     if (meshRef.current) {
+      const scale = isActiveSupplying ? 1.2 : 1
+      meshRef.current.scale.setScalar(scale + Math.sin(state.clock.elapsedTime * 2) * 0.05)
       meshRef.current.rotation.y += 0.01
       meshRef.current.rotation.z = Math.sin(state.clock.elapsedTime) * 0.1
     }
@@ -23,23 +31,23 @@ function SupplyNode({ position, level, maxLevel, type, name }) {
         <meshStandardMaterial
           color={color}
           emissive={color}
-          emissiveIntensity={0.5}
+          emissiveIntensity={isActiveSupplying ? 0.8 : 0.5}
           transparent
-          opacity={0.8}
+          opacity={opacity}
         />
       </mesh>
       <mesh>
         <sphereGeometry args={[1.3, 32, 32]} />
-        <meshBasicMaterial color={color} transparent opacity={0.2} />
+        <meshBasicMaterial color={color} transparent opacity={opacity * 0.2} />
       </mesh>
       <Text
         position={[0, 2, 0]}
         fontSize={0.3}
-        color="#ffffff"
+        color={isActiveSupplying ? '#ff0000' : isInQueue ? '#ffd000' : '#ffffff'}
         anchorX="center"
         anchorY="middle"
       >
-        {name}
+        {isActiveSupplying ? '🚨 ' + name : isInQueue ? '⏳ ' + name : name}
       </Text>
       <Text
         position={[0, 1.5, 0]}
@@ -54,7 +62,7 @@ function SupplyNode({ position, level, maxLevel, type, name }) {
   )
 }
 
-function FlowLine({ start, end, progress }) {
+function FlowLine({ start, end, progress, isActive, isInQueue }) {
   const points = useMemo(() => {
     const startVec = new THREE.Vector3(...start)
     const endVec = new THREE.Vector3(...end)
@@ -72,14 +80,17 @@ function FlowLine({ start, end, progress }) {
     return new THREE.BufferGeometry().setFromPoints(points)
   }, [points])
   
+  const lineOpacity = isActive ? 0.8 : isInQueue ? 0.4 : 0.1
+  const lineColor = isActive ? '#ff0000' : isInQueue ? '#ffd000' : '#00d4ff'
+  
   return (
     <line geometry={geometry}>
       <lineDashedMaterial
-        color="#00d4ff"
+        color={lineColor}
         dashSize={0.5}
         gapSize={0.3}
         transparent
-        opacity={0.5}
+        opacity={lineOpacity}
       />
     </line>
   )
@@ -114,16 +125,19 @@ function NetworkVisualization() {
         {hospitals.map((h, i) => {
           const angle = (i / hospitals.length) * Math.PI * 2
           const pos = [Math.cos(angle) * 12, 0, Math.sin(angle) * 12]
+          const isActive = activeDelivery?.buildingId === h.id
+          const isInQueue = deliveryQueue && Array.isArray(deliveryQueue) && deliveryQueue.includes(h.id)
           return (
             <React.Fragment key={h.id}>
               <SupplyNode
+                id={h.id}
                 position={pos}
                 level={h.lpgLevel}
                 maxLevel={100}
                 type={h.type}
                 name={`H-${i + 1}`}
               />
-              <FlowLine start={supplyPos} end={pos} />
+              <FlowLine start={supplyPos} end={pos} isActive={isActive} isInQueue={isInQueue} />
             </React.Fragment>
           )
         })}
@@ -131,16 +145,19 @@ function NetworkVisualization() {
         {households.map((h, i) => {
           const angle = (i / households.length) * Math.PI * 2 + 0.3
           const pos = [Math.cos(angle) * 20, 0, Math.sin(angle) * 20]
+          const isActive = activeDelivery?.buildingId === h.id
+          const isInQueue = deliveryQueue && Array.isArray(deliveryQueue) && deliveryQueue.includes(h.id)
           return (
             <React.Fragment key={h.id}>
               <SupplyNode
+                id={h.id}
                 position={pos}
                 level={h.lpgLevel}
                 maxLevel={100}
                 type={h.type}
                 name={`HH-${i + 1}`}
               />
-              <FlowLine start={supplyPos} end={pos} />
+              <FlowLine start={supplyPos} end={pos} isActive={isActive} isInQueue={isInQueue} />
             </React.Fragment>
           )
         })}
@@ -148,16 +165,19 @@ function NetworkVisualization() {
         {commercial.map((c, i) => {
           const angle = (i / commercial.length) * Math.PI * 2 + 0.8
           const pos = [Math.cos(angle) * 28, 0, Math.sin(angle) * 28]
+          const isActive = activeDelivery?.buildingId === c.id
+          const isInQueue = deliveryQueue && Array.isArray(deliveryQueue) && deliveryQueue.includes(c.id)
           return (
             <React.Fragment key={c.id}>
               <SupplyNode
+                id={c.id}
                 position={pos}
                 level={c.lpgLevel}
                 maxLevel={100}
                 type={c.type}
                 name={`C-${i + 1}`}
               />
-              <FlowLine start={supplyPos} end={pos} />
+              <FlowLine start={supplyPos} end={pos} isActive={isActive} isInQueue={isInQueue} />
             </React.Fragment>
           )
         })}

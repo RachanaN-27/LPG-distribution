@@ -56,7 +56,7 @@ function Building3D({
   const labelRef = useRef()
   const [hovered, setHovered] = useState(false)
   
-  const { setSelectedBuilding, setHoveredBuilding, selectedBuilding } = useStore()
+  const { setSelectedBuilding, setHoveredBuilding, selectedBuilding, activeDelivery, deliveryQueue } = useStore()
   
   const status = getLPGStatus({ daysRemaining })
   const statusColor = getStatusColor(status)
@@ -66,6 +66,11 @@ function Building3D({
   const isCritical = status === 'critical'
   const isWarning = status === 'warning'
   
+  const isActiveSupplying = activeDelivery?.buildingId === id
+  const isInQueue = deliveryQueue && Array.isArray(deliveryQueue) && deliveryQueue.includes(id)
+  
+  const opacity = isActiveSupplying ? 1 : isInQueue ? 0.6 : 0.1
+  
   const [width, depth, height] = dimensions
   const heightPos = height / 2 + 0.1
   const floors = Math.floor(height / 0.5)
@@ -74,27 +79,36 @@ function Building3D({
     const baseColor = new THREE.Color(color)
     const statusThreeColor = new THREE.Color(statusColor)
     const blendFactor = status === 'critical' ? 0.6 : status === 'warning' ? 0.4 : 0.2
-    return baseColor.lerp(statusThreeColor, blendFactor)
-  }, [color, statusColor, status])
+    const c = baseColor.lerp(statusThreeColor, blendFactor)
+    c.multiplyScalar(opacity)
+    return c
+  }, [color, statusColor, status, opacity])
 
   useFrame((state) => {
+    const time = state.clock.elapsedTime
+    
+    const pulse = isCritical ? Math.sin(time * 5) * 0.3 + 0.7 : 0.5
+    
     if (groupRef.current) {
-      const targetScale = hovered || isSelected ? 1.05 : 1
+      const targetScale = isActiveSupplying ? 1.2 : (hovered || isSelected ? 1.05 : 1)
       groupRef.current.scale.lerp(
         new THREE.Vector3(targetScale, 1, targetScale),
         0.1
       )
       
-      if (isCritical || isWarning) {
-        const pulse = Math.sin(state.clock.elapsedTime * (isCritical ? 4 : 2)) * 0.5 + 0.5
+      if (isCritical) {
+        const pulse = Math.sin(time * 5) * 0.5 + 0.5
+        groupRef.current.position.y = pulse * 0.15
+      } else if (isWarning) {
+        const pulse = Math.sin(time * 2) * 0.5 + 0.5
         groupRef.current.position.y = pulse * 0.1
       }
     }
     
     if (glowRef.current) {
-      const pulse = Math.sin(state.clock.elapsedTime * (isCritical ? 3 : 1.5)) * 0.5 + 0.5
+      const pulse = isCritical ? Math.sin(time * 5) * 0.3 + 0.7 : Math.sin(time * (isCritical ? 3 : 1.5)) * 0.5 + 0.5
       const baseOpacity = isCritical ? 0.4 : isWarning ? 0.25 : 0.15
-      glowRef.current.material.opacity = baseOpacity + pulse * 0.15
+      glowRef.current.material.opacity = (baseOpacity + pulse * 0.15) * opacity
     }
     
     if (labelRef.current && (hovered || isSelected)) {
@@ -137,18 +151,20 @@ function Building3D({
               <meshStandardMaterial
                 color={buildingColor}
                 emissive={statusColor}
-                emissiveIntensity={isCritical ? 0.3 : 0.1}
+                emissiveIntensity={isCritical ? (0.3 + pulse * 0.4) : 0.1}
                 metalness={0.2}
                 roughness={0.8}
+                transparent
+                opacity={opacity}
               />
             </mesh>
             <mesh position={[0, height + 0.8, 0]}>
               <cylinderGeometry args={[0.3, 0.5, 0.6, 4]} />
-              <meshStandardMaterial color="#ffffff" />
+              <meshStandardMaterial color="#ffffff" transparent opacity={opacity} />
             </mesh>
             <mesh position={[0, height + 1.2, 0]}>
               <sphereGeometry args={[0.15, 16, 16]} />
-              <meshBasicMaterial color="#ff0000" />
+              <meshBasicMaterial color="#ff0000" transparent opacity={opacity} />
             </mesh>
             <Text
               position={[0, height + 1.8, 0]}
@@ -174,14 +190,16 @@ function Building3D({
               <meshStandardMaterial
                 color={buildingColor}
                 emissive={statusColor}
-                emissiveIntensity={0.1}
+                emissiveIntensity={isCritical ? (pulse * 0.4) : 0.1}
                 metalness={0.4}
                 roughness={0.6}
+                transparent
+                opacity={opacity}
               />
             </mesh>
             <mesh position={[width / 2 + 0.3, heightPos - 0.5, 0]} castShadow>
               <cylinderGeometry args={[0.5, 0.5, 2, 8]} />
-              <meshStandardMaterial color="#555555" metalness={0.6} roughness={0.4} />
+              <meshStandardMaterial color="#555555" metalness={0.6} roughness={0.4} transparent opacity={opacity} />
             </mesh>
           </group>
         )
@@ -191,15 +209,15 @@ function Building3D({
           <group>
             <mesh position={[0, 0.1, 0]} castShadow receiveShadow>
               <boxGeometry args={[width * 1.5, 0.2, depth * 1.5]} />
-              <meshStandardMaterial color="#333333" />
+              <meshStandardMaterial color="#333333" transparent opacity={opacity} />
             </mesh>
             <mesh position={[0, 0.5, -depth * 0.5]} castShadow>
               <boxGeometry args={[width * 1.5, 0.8, 0.1]} />
-              <meshStandardMaterial color="#ff4444" emissive="#ff4444" emissiveIntensity={0.3} />
+              <meshStandardMaterial color="#ff4444" emissive="#ff4444" emissiveIntensity={0.3} transparent opacity={opacity} />
             </mesh>
             <mesh position={[0, 0.8, depth * 0.3]} castShadow>
               <boxGeometry args={[width * 1.5, 0.4, depth * 0.6]} />
-              <meshStandardMaterial color={buildingColor} emissive={statusColor} emissiveIntensity={0.2} />
+              <meshStandardMaterial color={buildingColor} emissive={statusColor} emissiveIntensity={isCritical ? (pulse * 0.4) : 0.2} transparent opacity={opacity} />
             </mesh>
           </group>
         )
@@ -216,9 +234,11 @@ function Building3D({
               <meshStandardMaterial
                 color={buildingColor}
                 emissive={statusColor}
-                emissiveIntensity={isCritical ? 0.25 : 0.05}
+                emissiveIntensity={isCritical ? (pulse * 0.4) : 0.05}
                 metalness={0.1}
                 roughness={0.9}
+                transparent
+                opacity={opacity}
               />
             </mesh>
             {type === 'household' && (
@@ -233,6 +253,9 @@ function Building3D({
     <group 
       ref={groupRef} 
       position={position}
+      onClick={handleClick}
+      onPointerOver={handlePointerOver}
+      onPointerOut={handlePointerOut}
     >
       {renderBuilding()}
       
@@ -244,14 +267,9 @@ function Building3D({
         <meshBasicMaterial
           color={statusColor}
           transparent
-          opacity={0.2}
+          opacity={opacity * 0.2}
           side={THREE.BackSide}
         />
-      </mesh>
-      
-      <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[Math.max(width, depth) * 0.6, 16]} />
-        <meshBasicMaterial color={statusColor} transparent opacity={0.4} />
       </mesh>
       
       {(hovered || isSelected) && (
@@ -280,6 +298,38 @@ function Building3D({
                   {lpgLevel.toFixed(1)}%
                 </span>
               </div>
+            </div>
+          </Html>
+        </group>
+      )}
+      
+      {isActiveSupplying && (
+        <group position={[0, height + 2.5, 0]}>
+          <Html
+            center
+            distanceFactor={15}
+            style={{
+              pointerEvents: 'none'
+            }}
+          >
+            <div className="bg-status-red/90 backdrop-blur-md px-3 py-1.5 rounded-lg border-2 border-status-red shadow-xl whitespace-nowrap animate-pulse">
+              <span className="text-white font-heading text-xs font-bold">🚨 SUPPLYING</span>
+            </div>
+          </Html>
+        </group>
+      )}
+      
+      {isInQueue && !isActiveSupplying && (
+        <group position={[0, height + 2.5, 0]}>
+          <Html
+            center
+            distanceFactor={15}
+            style={{
+              pointerEvents: 'none'
+            }}
+          >
+            <div className="bg-status-yellow/80 backdrop-blur-md px-2 py-1 rounded border border-status-yellow shadow-xl whitespace-nowrap">
+              <span className="text-black font-heading text-xs font-bold">⏳ NEXT</span>
             </div>
           </Html>
         </group>

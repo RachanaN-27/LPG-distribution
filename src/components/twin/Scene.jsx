@@ -66,7 +66,7 @@ function Lighting() {
 }
 
 function SceneContent() {
-  const { buildings, supplyUnit, showHeatmap, filters } = useStore()
+  const { buildings, supplyUnit, showHeatmap, filters, maxQueueSize, activeDelivery, deliveryQueue } = useStore()
   
   const filteredBuildings = useMemo(() => {
     return buildings.filter(building => {
@@ -77,7 +77,7 @@ function SceneContent() {
       if (filters.gas_station && building.type === 'gas_station') return true
       return false
     })
-  }, [buildings, filters])
+  }, [buildings, filters, activeDelivery, deliveryQueue])
   
   return (
     <>
@@ -119,7 +119,7 @@ function LoadingFallback() {
 }
 
 function FilterPanel() {
-  const { filters, setFilters } = useStore()
+  const { filters, setFilters, maxQueueSize, setMaxQueueSize } = useStore()
   
   const toggleFilter = (type) => {
     setFilters({
@@ -166,6 +166,11 @@ function FilterPanel() {
         ))}
       </div>
     </div>
+      <div className="mt-2 flex items-center gap-2">
+        <span className="text-xs text-text-muted">Queue Size</span>
+        <input type="range" min={1} max={50} value={maxQueueSize} onChange={(e) => setMaxQueueSize(parseInt(e.target.value, 10))} className="w-28" />
+        <span className="text-xs text-text-secondary">{maxQueueSize}</span>
+      </div>
   )
 }
 

@@ -379,7 +379,8 @@ export default function MapView() {
     setSelectedBuilding, 
     filters, 
     supplyUnit, 
-    activeDelivery 
+    activeDelivery,
+    deliveryQueue
   } = useStore()
   
   const center = [12.975, 77.72]
@@ -390,10 +391,13 @@ export default function MapView() {
     : 0
   
   const criticalBuildings = useMemo(() => {
-    return buildings.filter(b => 
-      b.status !== 'healthy' && filters[b.type]
-    )
-  }, [buildings, filters])
+    return buildings.filter(b => {
+      const isActive = activeDelivery?.buildingId === b.id
+      const isInQueue = deliveryQueue && Array.isArray(deliveryQueue) && deliveryQueue.includes(b.id)
+      const isHighlighted = isActive || isInQueue
+      return isHighlighted && filters[b.type]
+    })
+  }, [buildings, filters, activeDelivery, deliveryQueue])
   
   const neighborhoodStats = useMemo(() => {
     const stats = {}

@@ -21,6 +21,7 @@ const generateInitialState = () => {
     simulationTime: 0,
     crisisMode: false,
     alerts: [],
+    maxQueueSize: 10,
     filters: {
       hospital: true,
       household: true,
@@ -49,6 +50,7 @@ export const useStore = create((set, get) => ({
   setSelectedBuilding: (building) => set({ selectedBuilding: building }),
   setActiveTab: (tab) => set({ activeTab: tab }),
   setFilters: (filters) => set({ filters }),
+  setMaxQueueSize: (size) => set({ maxQueueSize: size }),
   
   toggleSimulation: () => set((state) => ({ 
     isSimulationRunning: !state.isSimulationRunning 
@@ -145,6 +147,20 @@ export const useStore = create((set, get) => ({
     
     const newSupplyLevel = state.supplyUnit.currentLevel - actualRefill
     
+    // topNeedy calculation removed to avoid duplicate declarations; topQueue handles queue
+    
+    // Build a top-needy queue of length maxQueueSize to display in the UI
+    const maxQueue = state.maxQueueSize
+    const topQueue = state.buildings
+      .filter(b => b.status !== 'healthy' && b.id !== recipient.id)
+      .sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority - b.priority
+        const statusOrder = { critical: 1, warning: 2, caution: 3 }
+        return (statusOrder[a.status] || 4) - (statusOrder[b.status] || 4)
+      })
+      .slice(0, maxQueue)
+      .map(b => b.id)
+    
     set({
       activeDelivery: {
         buildingId: recipient.id,
@@ -161,7 +177,7 @@ export const useStore = create((set, get) => ({
       },
       supplyUnit: { ...state.supplyUnit, currentLevel: Math.max(0, newSupplyLevel) },
       currentSupplyingCategory: recipient.type,
-      deliveryQueue: state.deliveryQueue.filter(id => id !== recipient.id)
+      deliveryQueue: topQueue
     })
   },
   
@@ -178,6 +194,16 @@ export const useStore = create((set, get) => ({
       const newStatus = getLPGStatus(newLevel)
       const daysRemaining = (newLevel / 100) * building.capacity / building.dailyConsumption
       
+      const topNeedy = state.buildings
+        .filter(b => b.status !== 'healthy' && b.id !== buildingId)
+        .sort((a, b) => {
+          if (a.priority !== b.priority) return a.priority - b.priority
+          const statusOrder = { critical: 1, warning: 2, caution: 3 }
+          return (statusOrder[a.status] || 4) - (statusOrder[b.status] || 4)
+        })
+        .slice(0, 10)
+        .map(b => b.id)
+      
       set({
         buildings: state.buildings.map(b => 
           b.id === buildingId 
@@ -186,6 +212,7 @@ export const useStore = create((set, get) => ({
         ),
         activeDelivery: null,
         currentSupplyingCategory: null,
+        deliveryQueue: topNeedy,
         statistics: {
           ...state.statistics,
           totalRefills: state.statistics.totalRefills + 1
