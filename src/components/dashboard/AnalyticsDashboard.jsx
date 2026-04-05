@@ -130,14 +130,6 @@ function AnalyticsDashboard() {
           color={CHART_COLORS.green}
           trend={5}
         />
-        <StatCard
-          icon={Target}
-          label="AI Accuracy"
-          value={`${statistics.aiAccuracy}%`}
-          subValue="Prediction accuracy"
-          color={CHART_COLORS.secondary}
-          trend={2}
-        />
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

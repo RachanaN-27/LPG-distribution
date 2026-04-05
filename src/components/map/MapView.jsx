@@ -5,18 +5,26 @@ import { useEffect, useState, useMemo } from 'react'
 import 'leaflet/dist/leaflet.css'
 
 const NEIGHBORHOODS = {
-  ITPL: { center: [12.9845, 77.7265], radius: 0.012 },
-  Brookfield: { center: [12.9745, 77.7235], radius: 0.014 },
-  WhitefieldMain: { center: [12.9785, 77.7315], radius: 0.016 },
-  Kadugodi: { center: [12.9930, 77.7060], radius: 0.012 },
-  Hoodi: { center: [12.9890, 77.7090], radius: 0.011 },
-  Sadarmatt: { center: [12.9770, 77.7140], radius: 0.010 },
-  Siddapura: { center: [12.9820, 77.7390], radius: 0.011 },
-  ITPB: { center: [12.9910, 77.7330], radius: 0.009 },
-  Bommasandra: { center: [12.9520, 77.6980], radius: 0.015 },
-  ElectronicCity: { center: [12.9200, 77.6700], radius: 0.018 },
-  Sarjapur: { center: [12.9080, 77.6900], radius: 0.014 },
-  Bellandur: { center: [12.9355, 77.6745], radius: 0.012 }
+  ITPL: { center: [12.9845, 77.7265], radius: 0.014 },
+  Brookfield: { center: [12.9745, 77.7235], radius: 0.016 },
+  WhitefieldMain: { center: [12.9785, 77.7315], radius: 0.018 },
+  Kadugodi: { center: [12.9930, 77.7060], radius: 0.014 },
+  Hoodi: { center: [12.9890, 77.7090], radius: 0.013 },
+  Sadarmatt: { center: [12.9770, 77.7140], radius: 0.012 },
+  Siddapura: { center: [12.9820, 77.7390], radius: 0.013 },
+  ITPB: { center: [12.9910, 77.7330], radius: 0.011 },
+  Bommasandra: { center: [12.9520, 77.6980], radius: 0.017 },
+  ElectronicCity: { center: [12.9200, 77.6700], radius: 0.020 },
+  Sarjapur: { center: [12.9080, 77.6900], radius: 0.016 },
+  Bellandur: { center: [12.9355, 77.6745], radius: 0.014 },
+  Marathahalli: { center: [12.9590, 77.7010], radius: 0.012 },
+  HAL: { center: [12.9610, 77.7120], radius: 0.011 },
+  Kundalahalli: { center: [12.9690, 77.6950], radius: 0.010 },
+  WhitefieldRailway: { center: [12.9848, 77.7360], radius: 0.009 },
+  Graphite: { center: [12.9720, 77.7280], radius: 0.010 },
+  Nallurhalli: { center: [12.9660, 77.7300], radius: 0.011 },
+  Hagadur: { center: [12.9755, 77.7180], radius: 0.012 },
+  Channasandra: { center: [12.9870, 77.7110], radius: 0.010 }
 }
 
 const WHITEFIELD_ROADS = {
@@ -119,23 +127,20 @@ const SupplyHubMarker = ({ position, isActive, supplyPercent, name, type }) => {
 
 const AnimatedDelivery = ({ delivery, progress, color = '#00ff00' }) => {
   const [roadPath, setRoadPath] = useState(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState(null)
   
   useEffect(() => {
     if (!delivery || !delivery.from || !delivery.to) return
     
     const fetchPath = async () => {
-      setIsLoading(true)
-      setError(null)
       try {
-        const path = await getRealRoadPath(delivery.from.lat, delivery.from.lng, delivery.to.lat, delivery.to.lng)
+        const path = await getRealRoadPath(
+          delivery.from.lat, delivery.from.lng,
+          delivery.to.lat, delivery.to.lng
+        )
         setRoadPath(path)
       } catch (err) {
-        setError(err.message)
         console.error('Route fetch error:', err)
-      } finally {
-        setIsLoading(false)
+        setRoadPath(null)
       }
     }
     
@@ -145,10 +150,7 @@ const AnimatedDelivery = ({ delivery, progress, color = '#00ff00' }) => {
   if (!delivery || !delivery.from || !delivery.to) return null
   
   const { from, to } = delivery
-  const lat1 = from.lat, lng1 = from.lng
-  const lat2 = to.lat, lng2 = to.lng
-  
-  const path = roadPath || getStraightPath(lat1, lng1, lat2, lng2)
+  const path = roadPath || getStraightPath(from.lat, from.lng, to.lat, to.lng)
   
   const pathIndex = Math.floor(progress * (path.length - 1))
   const nextIndex = Math.min(pathIndex + 1, path.length - 1)
@@ -204,19 +206,24 @@ const AnimatedDelivery = ({ delivery, progress, color = '#00ff00' }) => {
   )
 }
 
-const CriticalBuildingMarker = ({ building, onSelect, isActive }) => {
-  const statusColor = getStatusColor(building.status)
-  const baseRadius = building.type === 'hospital' ? 16 : building.type === 'commercial' ? 10 : 8
+const CriticalBuildingMarker = ({ building, onSelect, isActive, isRecentlySupplied }) => {
+  let statusColor
+  if (isRecentlySupplied) {
+    statusColor = '#22c55e'
+  } else {
+    statusColor = getStatusColor(building.status)
+  }
+  const baseRadius = 8
   
   return (
     <CircleMarker
       center={[building.lat, building.lng]}
-      radius={isActive ? baseRadius * 1.8 : baseRadius}
+      radius={isActive ? baseRadius * 1.5 : baseRadius}
       pathOptions={{
         color: statusColor,
         fillColor: statusColor,
-        fillOpacity: isActive ? 1 : 0.7,
-        weight: isActive ? 4 : 2
+        fillOpacity: isActive ? 1 : isRecentlySupplied ? 0.8 : 0.7,
+        weight: isActive || isRecentlySupplied ? 4 : 2
       }}
       eventHandlers={{
         click: () => onSelect(building)
@@ -497,14 +504,34 @@ export default function MapView() {
   const center = [12.975, 77.72]
   const zoom = 13
   
+  const now = Date.now()
+  const recentlySuppliedIds = useMemo(() => {
+    const recentIds = new Set()
+    buildings.forEach(b => {
+      if (b.lastRefill) {
+        const refillTime = new Date(b.lastRefill).getTime()
+        if (now - refillTime < 120000) {
+          recentIds.add(b.id)
+        }
+      }
+    })
+    return recentIds
+  }, [buildings])
+  
+  const allActiveBuildingIds = useMemo(() => {
+    return new Set((activeDeliveries || []).map(d => d.buildingId))
+  }, [activeDeliveries])
+  
   const criticalBuildings = useMemo(() => {
     return buildings.filter(b => {
       const isActive = activeDeliveries?.some(d => d.buildingId === b.id)
       const isInQueue = deliveryQueue && Array.isArray(deliveryQueue) && deliveryQueue.includes(b.id)
-      const isHighlighted = isActive || isInQueue
+      const isRecentlySupplied = recentlySuppliedIds.has(b.id)
+      const hasIssue = b.status !== 'healthy'
+      const isHighlighted = isActive || isInQueue || (isRecentlySupplied && hasIssue)
       return isHighlighted && filters[b.type]
     })
-  }, [buildings, filters, activeDeliveries, deliveryQueue])
+  }, [buildings, filters, activeDeliveries, deliveryQueue, recentlySuppliedIds])
   
   const neighborhoodStats = useMemo(() => {
     const stats = {}
@@ -602,6 +629,22 @@ export default function MapView() {
             building={building}
             onSelect={setSelectedBuilding}
             isActive={activeDeliveries?.some(d => d.buildingId === building.id)}
+            isRecentlySupplied={recentlySuppliedIds.has(building.id)}
+          />
+        ))}
+
+        {buildings.filter(b => {
+          const isActive = activeDeliveries?.some(d => d.buildingId === b.id)
+          const isInQueue = deliveryQueue && Array.isArray(deliveryQueue) && deliveryQueue.includes(b.id)
+          const isCritical = b.status !== 'healthy'
+          return !isActive && !isInQueue && isCritical && filters[b.type]
+        }).slice(0, 50).map(building => (
+          <CriticalBuildingMarker
+            key={building.id}
+            building={building}
+            onSelect={setSelectedBuilding}
+            isActive={false}
+            isRecentlySupplied={false}
           />
         ))}
       </MapContainer>

@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -12,8 +14,8 @@ html, body, #root {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background-color: #0a0e17;
-  font-family: 'Rajdhani', sans-serif;
+  background-color: #0d1117;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   color: #ffffff;
 }
 
@@ -94,9 +96,9 @@ html, body, #root {
 
 .leaflet-popup-content-wrapper {
   background: white;
-  border-radius: 12px;
+  border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  font-family: 'Rajdhani', sans-serif;
+  font-family: 'DM Sans', -apple-system, sans-serif;
 }
 
 .leaflet-popup-content {

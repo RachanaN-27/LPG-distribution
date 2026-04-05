@@ -34,68 +34,65 @@ function Header() {
   }
   
   return (
-    <header className="h-16 bg-bg-secondary border-b border-accent-primary/20 flex items-center justify-between px-6 relative z-50">
-      <div className="flex items-center gap-8">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-accent-primary to-accent-secondary flex items-center justify-center">
-            <span className="text-xl">🔥</span>
+    <header className="h-14 bg-[#0d1117] border-b border-[#30363d] flex items-center justify-between px-5">
+      <div className="flex items-center gap-6">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded bg-[#238636] flex items-center justify-center">
+            <span className="text-white text-sm font-semibold">L</span>
           </div>
           <div>
-            <h1 className="font-heading text-lg font-bold text-accent-primary tracking-wider">
-              LPG DIGITAL TWIN
+            <h1 className="text-base font-semibold text-white tracking-tight">
+              LPG Distribution
             </h1>
-            <p className="text-xs text-text-muted">Whitefield, Bangalore</p>
           </div>
         </div>
         
-        <nav className="flex gap-1">
+        <nav className="flex gap-0.5">
           {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${
                 activeTab === id
-                  ? 'bg-accent-primary/20 text-accent-primary'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-bg-tertiary'
+                  ? 'bg-[#21262d] text-white'
+                  : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'
               }`}
             >
-              <Icon size={18} />
-              <span className="hidden md:inline">{label}</span>
+              <Icon size={14} />
+              <span>{label}</span>
             </button>
           ))}
         </nav>
       </div>
       
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-5">
         <div className="text-right">
-          <div className="font-mono text-sm text-text-primary">
+          <div className="text-sm text-white font-mono">
             {formatTime()}
           </div>
-          <div className="text-xs text-text-muted">
-            Day {simulationDay} • {formatDate()}
+          <div className="text-xs text-[#8b949e]">
+            Day {simulationDay} · {formatDate()}
           </div>
         </div>
         
-        <div className="flex items-center gap-3 px-4 py-2 rounded-lg bg-bg-tertiary">
-          <div className="text-right">
-            <div className="text-xs text-text-muted">Central Supply</div>
-            <div className="font-mono text-sm font-bold" style={{ color: supplyPercent > 20 ? '#00ff88' : '#ff3366' }}>
-              {supplyPercent.toFixed(1)}%
-            </div>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-[#21262d]">
+          <div className="text-xs text-[#8b949e]">Stock</div>
+          <div className="text-sm font-mono font-medium" style={{ color: supplyPercent > 20 ? '#3fb950' : '#f85149' }}>
+            {supplyPercent.toFixed(0)}%
           </div>
-          <div className="w-24 h-2 bg-bg-primary rounded-full overflow-hidden">
+          <div className="w-16 h-1.5 bg-[#30363d] rounded-full overflow-hidden">
             <div 
-              className="h-full transition-all duration-500"
+              className="h-full transition-all"
               style={{ 
                 width: `${supplyPercent}%`,
-                backgroundColor: supplyPercent > 50 ? '#00ff88' : supplyPercent > 20 ? '#ffd000' : '#ff3366'
+                backgroundColor: supplyPercent > 50 ? '#3fb950' : supplyPercent > 20 ? '#d29922' : '#f85149'
               }}
             />
           </div>
         </div>
         
-        <button className="p-2 rounded-lg hover:bg-bg-tertiary transition-colors text-text-secondary hover:text-text-primary">
-          <Settings size={20} />
+        <button className="p-1.5 rounded hover:bg-[#21262d] text-[#8b949e] hover:text-white">
+          <Settings size={16} />
         </button>
       </div>
     </header>

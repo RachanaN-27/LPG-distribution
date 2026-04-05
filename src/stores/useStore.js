@@ -41,7 +41,8 @@ const generateInitialState = () => {
       cautionUnits: cautionCount,
       healthyUnits: healthyCount,
       totalRefills: 0,
-      totalConsumed: 0
+      totalConsumed: 0,
+      aiAccuracy: 85
     }
   }
 }
@@ -64,7 +65,7 @@ export const useStore = create((set, get) => ({
     const state = get()
     if (!state.isSimulationRunning) return
     
-    const speedMultiplier = state.simulationSpeed * 0.3
+    const speedMultiplier = state.simulationSpeed * 2
     const timeAdvanceSeconds = (deltaTime / 1000) * speedMultiplier
     const simulatedDays = timeAdvanceSeconds / 60
     
@@ -112,7 +113,7 @@ export const useStore = create((set, get) => ({
     })
   },
   
-  findNextRecipient: (excludeBuildingIds = [], supplyUnitType = null, allowMultiple = false) => {
+  findNextRecipient: (excludeBuildingIds = [], supplyUnitType = null) => {
     const state = get()
     
     const activeBuildingIds = (state.activeDeliveries || []).map(d => d.buildingId)
@@ -145,40 +146,6 @@ export const useStore = create((set, get) => ({
       return dist
     }
     
-    if (allowMultiple) {
-      const priorityWeight = 10
-      const distanceWeight = 1
-      
-      const scoredBuildings = needyBuildings.map(b => {
-        const distanceScore = getDistanceScore(b)
-        const priorityScore = b.priority
-        const combinedScore = (priorityScore * priorityWeight) + (distanceScore * distanceWeight)
-        return { ...b, combinedScore, distance: distanceScore }
-      })
-      
-      scoredBuildings.sort((a, b) => {
-        if (a.combinedScore !== b.combinedScore) {
-          return a.combinedScore - b.combinedScore
-        }
-        const statusOrder = { critical: 1, warning: 2, caution: 3 }
-        return (statusOrder[a.status] || 4) - (statusOrder[b.status] || 4)
-      })
-      
-      const routeBuildings = [scoredBuildings[0]]
-      const maxRouteStops = 3
-      const maxRouteDistance = 3
-      
-      for (let i = 1; i < scoredBuildings.length && routeBuildings.length < maxRouteStops; i++) {
-        const lastBuilding = routeBuildings[routeBuildings.length - 1]
-        const distToNext = calculateDistance(lastBuilding.lat, lastBuilding.lng, scoredBuildings[i].lat, scoredBuildings[i].lng)
-        if (distToNext <= maxRouteDistance) {
-          routeBuildings.push(scoredBuildings[i])
-        }
-      }
-      
-      return routeBuildings
-    }
-    
     const priorityWeight = 10
     const distanceWeight = 1
     
@@ -197,13 +164,13 @@ export const useStore = create((set, get) => ({
       return (statusOrder[a.status] || 4) - (statusOrder[b.status] || 4)
     })
     
-    return [scoredBuildings[0]]
+    return scoredBuildings[0]
   },
 
   startSupplyDelivery: () => {
     const state = get()
     
-    const maxDeliveriesPerUnit = 10
+    const maxDeliveriesPerUnit = 1
     const currentDeliveries = state.activeDeliveries || []
     const lpgDeliveries = currentDeliveries.filter(d => d.supplyUnitType === 'lpg').length
     const biogasDeliveries = currentDeliveries.filter(d => d.supplyUnitType === 'biogas').length
@@ -221,7 +188,7 @@ export const useStore = create((set, get) => ({
     const activeBuildingIds = currentDeliveries.map(d => d.buildingId)
     
     let supplyUnit
-    let routeBuildings = []
+    let recipient
     
     const lpgHasCapacity = lpgUnit && lpgUnit.currentLevel >= 50 && lpgDeliveries < maxDeliveriesPerUnit
     const biogasHasCapacity = biogasUnit && biogasUnit.currentLevel >= 50 && biogasDeliveries < maxDeliveriesPerUnit
@@ -231,32 +198,34 @@ export const useStore = create((set, get) => ({
     if (lpgDeliveries < maxDeliveriesPerUnit && biogasDeliveries < maxDeliveriesPerUnit) {
       if (lpgDeliveries <= biogasDeliveries && lpgHasCapacity) {
         supplyUnit = lpgUnit
-        routeBuildings = get().findNextRecipient(activeBuildingIds, 'lpg', true)
-        if (!routeBuildings || routeBuildings.length === 0 || routeBuildings[0].priority > 2) {
+        recipient = get().findNextRecipient(activeBuildingIds, 'lpg')
+        if (!recipient || recipient.priority > 2) {
           if (biogasHasCapacity) {
             supplyUnit = biogasUnit
-            routeBuildings = get().findNextRecipient(activeBuildingIds, 'biogas', true)
+            recipient = get().findNextRecipient(activeBuildingIds, 'biogas')
           }
         }
       } else if (biogasHasCapacity) {
         supplyUnit = biogasUnit
-        routeBuildings = get().findNextRecipient(activeBuildingIds, 'biogas', true)
+        recipient = get().findNextRecipient(activeBuildingIds, 'biogas')
       }
     } else if (lpgHasCapacity) {
       supplyUnit = lpgUnit
-      routeBuildings = get().findNextRecipient(activeBuildingIds, 'lpg', true)
+      recipient = get().findNextRecipient(activeBuildingIds, 'lpg')
     } else if (biogasHasCapacity) {
       supplyUnit = biogasUnit
-      routeBuildings = get().findNextRecipient(activeBuildingIds, 'biogas', true)
+      recipient = get().findNextRecipient(activeBuildingIds, 'biogas')
     }
     
-    if (!supplyUnit || !routeBuildings || routeBuildings.length === 0) return
+    if (!supplyUnit || !recipient) return
     
-    const recipient = routeBuildings[0]
-    const stopPoints = routeBuildings.slice(1).map(b => ({ lat: b.lat, lng: b.lng }))
-    const refillAmount = routeBuildings.reduce((sum, b) => sum + Math.min(b.refillAmount, (b.capacity * (100 - b.lpgLevel)) / 100), 0)
+    const refillPercent = (recipient.refillAmount / recipient.capacity) * 100
+    const actualRefill = Math.min(
+      recipient.refillAmount,
+      (recipient.capacity * (100 - recipient.lpgLevel)) / 100
+    )
     
-    const newSupplyLevel = supplyUnit.currentLevel - refillAmount
+    const newSupplyLevel = supplyUnit.currentLevel - actualRefill
     
     const trafficSpeed = Math.random()
     const baseDuration = 15000
@@ -275,7 +244,7 @@ export const useStore = create((set, get) => ({
     
     const maxQueue = state.maxQueueSize
     const topQueue = state.buildings
-      .filter(b => b.status !== 'healthy' && !routeBuildings.some(rb => rb.id === b.id))
+      .filter(b => b.status !== 'healthy' && b.id !== recipient.id)
       .sort((a, b) => {
         if (a.priority !== b.priority) return a.priority - b.priority
         const statusOrder = { critical: 1, warning: 2, caution: 3 }
@@ -298,12 +267,9 @@ export const useStore = create((set, get) => ({
       supplyUnitType: supplyUnit.type,
       from: { lat: supplyUnit.lat, lng: supplyUnit.lng },
       to: { lat: recipient.lat, lng: recipient.lng },
-      stopPoints: stopPoints,
-      routeBuildings: routeBuildings.map(b => b.id),
-      refillAmount: refillAmount,
+      refillAmount: actualRefill,
       startLevel: recipient.lpgLevel,
-      targetLevel: Math.min(100, recipient.lpgLevel + (refillAmount / recipient.capacity) * 100),
-      totalStops: routeBuildings.length
+      targetLevel: Math.min(100, recipient.lpgLevel + refillPercent)
     }
     
     const updatedSupplyUnits = supplyUnits.map(u => {

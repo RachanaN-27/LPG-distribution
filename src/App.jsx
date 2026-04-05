@@ -43,7 +43,7 @@ function App() {
           }
         })
         
-        const maxActive = 20
+        const maxActive = 2
         if (activeDeliveries.length < maxActive) {
           supplyTimerRef.current += deltaTime
           
